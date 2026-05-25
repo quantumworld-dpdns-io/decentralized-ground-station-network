@@ -142,8 +142,7 @@ impl MerkleZkpProver {
                     .map(|&b| b != 0)
                     .collect();
 
-                let mut current = blake3::hash(&proof_data[32..64]);
-                let mut current_bytes = current.as_bytes().to_vec();
+                let mut current_bytes = blake3::hash(&proof_data[32..64]).as_bytes().to_vec();
 
                 for (i, sibling) in siblings.iter().enumerate() {
                     let go_right = path.get(i).copied().unwrap_or(true);
