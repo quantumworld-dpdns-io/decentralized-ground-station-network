@@ -182,11 +182,12 @@ impl ProofAggregator {
         };
 
         match &recursive.outer_proof.proof_type {
-            ProofType::Recursive(outer_data, claimed_inner_hash) => {
+            ProofType::Recursive(_outer_data, claimed_inner_hash) => {
                 if claimed_inner_hash.as_slice() != inner_hash.as_bytes() {
                     return Ok(false);
                 }
                 Ok(true)
+            }
             _ => Err(ZkpError::RecursiveCompositionFailed(
                 "outer proof must be recursive type".into(),
             )),
