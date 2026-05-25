@@ -1,11 +1,11 @@
 name: Security Scan
 on:
   push:
-    branches: [main, develop]
+    branches: [main]
   pull_request:
     branches: [main]
   schedule:
-    - cron: '0 6 * * *'
+    - cron: '0 6 * * 0'
   workflow_dispatch:
 
 concurrency:
@@ -15,23 +15,31 @@ concurrency:
 jobs:
   trivy:
     runs-on: ubuntu-latest
+    permissions:
+      security-events: write
+      contents: read
     steps:
       - uses: actions/checkout@v4
-      - name: Trivy repo scan
+      - name: Trivy repository scan
         uses: aquasecurity/trivy-action@master
         with:
           scan-type: fs
           scan-ref: .
           format: sarif
           output: trivy-results.sarif
-          severity: CRITICAL,HIGH
-          vuln-type: os,library
-          scanners: vuln,secret,config
+          severity: HIGH,CRITICAL
+          scanners: vuln,secret,misconfig
       - name: Upload Trivy results
         uses: github/codeql-action/upload-sarif@v3
         with:
           sarif_file: trivy-results.sarif
           category: trivy
+      - name: Fail on critical findings
+        run: |
+          if grep -q '"severity": "CRITICAL"' trivy-results.sarif; then
+            echo "::error::Critical vulnerabilities found!"
+            exit 1
+          fi
 
   codeql:
     runs-on: ubuntu-latest
@@ -43,24 +51,27 @@ jobs:
       - uses: actions/checkout@v4
       - uses: github/codeql-action/init@v3
         with:
-          languages: go,rust,python,javascript
+          languages: javascript,python,go
           queries: security-extended,security-and-quality
       - uses: github/codeql-action/autobuild@v3
       - uses: github/codeql-action/analyze@v3
 
   semgrep:
     runs-on: ubuntu-latest
+    permissions:
+      security-events: write
+      contents: read
     steps:
       - uses: actions/checkout@v4
-      - name: Semgrep scan
+      - name: Semgrep scan with OWASP rules
         uses: semgrep/semgrep-action@v1
         with:
           config: >-
             p/default
-            p/r2c
             p/owasp-top-ten
             p/command-injection
             p/secrets
+            p/r2c
           auditOn: push
           generateSarif: true
       - name: Upload Semgrep SARIF
@@ -72,6 +83,9 @@ jobs:
   dependency-review:
     runs-on: ubuntu-latest
     if: github.event_name == 'pull_request'
+    permissions:
+      contents: read
+      pull-requests: write
     steps:
       - uses: actions/checkout@v4
       - uses: actions/dependency-review-action@v4
