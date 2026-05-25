@@ -104,7 +104,7 @@ impl MerkleTree {
             ));
         }
 
-        let leaf = self.nodes[leaf_index].clone();
+        let leaf = self.leaves[leaf_index].clone();
         let mut siblings = Vec::new();
         let mut path = Vec::new();
 
