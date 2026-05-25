@@ -155,7 +155,15 @@ fn generate_matrix(seed: &[u8; 34], k: usize, transposed: bool) -> Vec<Vec<Vec<i
     matrix
 }
 
-fn matrix_vector_mul(matrix: &[Vec<Vec<i16>>], vec: &[Vec<i16>]) -> Vec<Vec<i16>> {
+fn ntt_mul(a_ntt: &[i16], b_ntt: &[i16]) -> Vec<i16> {
+    let mut prod = vec![0i16; a_ntt.len().min(b_ntt.len())];
+    for i in 0..prod.len() {
+        prod[i] = mod_reduce_i32((a_ntt[i] as i32) * (b_ntt[i] as i32));
+    }
+    inv_ntt(&prod)
+}
+
+fn matrix_vector_mul(matrix: &[Vec<Vec<i16>>], vec_ntt: &[Vec<i16>]) -> Vec<Vec<i16>> {
     let k = matrix.len();
     let mut result = Vec::with_capacity(k);
     for i in 0..k {
