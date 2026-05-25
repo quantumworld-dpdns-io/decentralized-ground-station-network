@@ -222,4 +222,14 @@ mod tests {
         assert_eq!(container.version, deserialized.version);
         assert_eq!(container.data.len(), deserialized.data.len());
     }
+
+    #[test]
+    fn test_binary_large_data() {
+        let data: Vec<u8> = (0..1024).map(|i| (i % 256) as u8).collect();
+        let container = CryptoContainer::new("ML-KEM-1024", "public", data);
+        let bytes = binary::serialize(&container).unwrap();
+        let deserialized: CryptoContainer = binary::deserialize(&bytes).unwrap();
+        assert_eq!(container.data.len(), deserialized.data.len());
+        assert_eq!(container.data, deserialized.data);
+    }
 }
