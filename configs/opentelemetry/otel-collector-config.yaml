@@ -1,0 +1,121 @@
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+      http:
+        endpoint: 0.0.0.0:4318
+
+  hostmetrics:
+    collection_interval: 30s
+    scrapers:
+      cpu: {}
+      disk: {}
+      load: {}
+      filesystem: {}
+      memory: {}
+      network: {}
+      paging: {}
+      processes: {}
+
+  prometheus:
+    config:
+      scrape_configs:
+        - job_name: "dgsn-backend"
+          scrape_interval: 15s
+          metrics_path: /metrics
+          static_configs:
+            - targets: ["backend:9090"]
+
+  jaeger:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:14250
+
+processors:
+  batch:
+    timeout: 10s
+    send_batch_size: 1024
+    send_batch_max_size: 2048
+
+  memory_limiter:
+    check_interval: 5s
+    limit_mib: 512
+    spike_limit_mib: 128
+
+  attributes:
+    actions:
+      - key: dgsn.environment
+        value: production
+        action: upsert
+      - key: dgsn.version
+        value: 0.1.0
+        action: upsert
+
+  resourcedetection:
+    detectors: [ec2, gcp, azure, system]
+    timeout: 10s
+
+  filter:
+    error_mode: ignore
+    traces:
+      span:
+        - 'attributes["http.method"] != "OPTIONS"'
+        - 'attributes["healthcheck"] != true'
+
+  k8sattributes:
+    auth_type: serviceAccount
+    passthrough: false
+    extract:
+      metadata:
+        - k8s.pod.name
+        - k8s.node.name
+        - k8s.namespace.name
+        - k8s.deployment.name
+        - k8s.container.name
+
+exporters:
+  otlp:
+    endpoint: tempo:4317
+    tls:
+      insecure: true
+
+  prometheus:
+    endpoint: 0.0.0.0:8889
+    namespace: dgsn
+    const_labels:
+      service: dgsn-otel-collector
+
+  loki:
+    endpoint: http://loki:3100/loki/api/v1/push
+    tls:
+      insecure: true
+    format: json
+
+  debug:
+    verbosity: detailed
+    sampling_initial: 2
+    sampling_thereafter: 10
+
+service:
+  pipelines:
+    traces:
+      receivers: [otlp, jaeger]
+      processors: [memory_limiter, batch, resourcedetection, k8sattributes, attributes, filter]
+      exporters: [otlp, debug]
+
+    metrics:
+      receivers: [otlp, hostmetrics, prometheus]
+      processors: [memory_limiter, batch, attributes]
+      exporters: [prometheus, debug]
+
+    logs:
+      receivers: [otlp]
+      processors: [memory_limiter, batch, attributes, filter]
+      exporters: [loki, debug]
+
+  telemetry:
+    logs:
+      level: info
+    metrics:
+      address: 0.0.0.0:8888
