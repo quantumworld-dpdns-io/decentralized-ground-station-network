@@ -1,0 +1,79 @@
+ARG WASMTIME_VERSION=20.0.0
+ARG ALPINE_VERSION=3.20
+
+FROM alpine:${ALPINE_VERSION} AS base
+
+RUN apk add --no-cache ca-certificates tzdata curl
+
+FROM base AS wasmtime-install
+
+ARG WASMTIME_VERSION
+
+RUN case "$(uname -m)" in \
+        x86_64)  arch="x86_64" ;; \
+        aarch64) arch="aarch64" ;; \
+        *)       echo "unsupported arch: $(uname -m)"; exit 1 ;; \
+    esac && \
+    curl -sSfL "https://github.com/bytecodealliance/wasmtime/releases/download/v${WASMTIME_VERSION}/wasmtime-v${WASMTIME_VERSION}-${arch}-linux.tar.xz" \
+    | tar -xJ -C /tmp && \
+    cp "/tmp/wasmtime-v${WASMTIME_VERSION}-${arch}-linux/wasmtime" /usr/local/bin/wasmtime && \
+    chmod +x /usr/local/bin/wasmtime
+
+FROM base
+
+COPY --from=wasmtime-install /usr/local/bin/wasmtime /usr/local/bin/wasmtime
+
+RUN addgroup -S dgsn && adduser -S dgsn -G dgsn
+
+WORKDIR /app
+
+COPY src/crypto-kernel/wasm/pkg/dgsn_crypto_kernel_bg.wasm /app/modules/crypto.wasm
+COPY src/crypto-kernel/wasm/dgsn_crypto_kernel.js /app/modules/
+COPY src/crypto-kernel/wasm/dgsn_crypto_kernel.d.ts /app/modules/
+
+COPY --chmod=755 <<"RUNTIME_SCRIPT" /usr/local/bin/dgsn-wasm-runtime.sh
+#!/bin/sh
+set -e
+
+WASM_MODULE="${WASM_MODULE:-/app/modules/crypto.wasm}"
+WASM_FUNC="${WASM_FUNC:-keygen}"
+WASM_INPUT="${WASM_INPUT:-}"
+
+echo "DGSN WASM Runtime v0.1.0"
+echo "Module: $WASM_MODULE"
+echo "Function: $WASM_FUNC"
+
+if [ ! -f "$WASM_MODULE" ]; then
+    echo "Error: WASM module not found: $WASM_MODULE"
+    exit 1
+fi
+
+if [ -n "$WASM_INPUT" ]; then
+    wasmtime run \
+        --dir /tmp \
+        --env RUST_LOG="${RUST_LOG:-info}" \
+        "$WASM_MODULE" \
+        --invoke "$WASM_FUNC" \
+        "$WASM_INPUT"
+else
+    wasmtime run \
+        --dir /tmp \
+        --env RUST_LOG="${RUST_LOG:-info}" \
+        "$WASM_MODULE" \
+        --invoke "$WASM_FUNC"
+fi
+RUNTIME_SCRIPT
+
+RUN chown -R dgsn:dgsn /app
+
+USER dgsn
+
+EXPOSE 8080
+
+ENV RUST_LOG=info
+ENV WASM_MODULE=/app/modules/crypto.wasm
+
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+    CMD wasmtime run "$WASM_MODULE" --invoke init_crypto > /dev/null 2>&1 || exit 1
+
+ENTRYPOINT ["sh", "/usr/local/bin/dgsn-wasm-runtime.sh"]
