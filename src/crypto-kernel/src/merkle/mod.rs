@@ -49,7 +49,7 @@ impl MerkleTree {
 
         for leaf in leaves {
             let leaf_hash = Self::hash_leaf(leaf);
-            nodes.push(leaf_hash.to_vec());
+            nodes.push(leaf_hash.as_bytes().to_vec());
         }
 
         let mut current_level = leaf_count;
@@ -65,7 +65,7 @@ impl MerkleTree {
                     left.clone()
                 };
                 let parent = Self::hash_node(&left, &right);
-                nodes.push(parent.to_vec());
+                nodes.push(parent.as_bytes().to_vec());
             }
             current_level += next_size;
             level_size = next_size;
@@ -140,7 +140,7 @@ impl MerkleTree {
     }
 
     pub fn verify_proof(proof: &MerkleProof, root: &[u8]) -> bool {
-        let mut current_bytes = Self::hash_leaf(&proof.leaf).to_vec();
+        let mut current_bytes = Self::hash_leaf(&proof.leaf).as_bytes().to_vec();
 
         for (i, sibling) in proof.siblings.iter().enumerate() {
             let go_right = proof.path[i];
@@ -149,7 +149,7 @@ impl MerkleTree {
             } else {
                 Self::hash_node(sibling, &current_bytes)
             };
-            current_bytes = parent.to_vec();
+            current_bytes = parent.as_bytes().to_vec();
         }
 
         current_bytes.as_slice() == root
