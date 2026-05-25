@@ -2,27 +2,16 @@ pub mod dilithium;
 pub mod kyber;
 pub mod sphincs;
 
-pub trait Keygen {
-    type PublicKey;
-    type SecretKey;
+use serde::{Deserialize, Serialize};
 
-    fn keypair() -> crate::Result<(Self::PublicKey, Self::SecretKey)>;
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum KeyType {
+    Signing,
+    Encryption,
+    Kem,
 }
 
-pub trait Sign {
-    type SecretKey;
-    type Signature;
-
-    fn sign(message: &[u8], sk: &Self::SecretKey) -> crate::Result<Self::Signature>;
-}
-
-pub trait Verify {
-    type PublicKey;
-    type Signature;
-
-    fn verify(message: &[u8], signature: &Self::Signature, pk: &Self::PublicKey) -> crate::Result<bool>;
-}
-
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum Algorithm {
     MLKEM512,
     MLKEM768,
@@ -57,6 +46,49 @@ impl Algorithm {
             Algorithm::MLKEM1024 | Algorithm::MLDSA87 | Algorithm::SLHDSA256F => 256,
         }
     }
+
+    pub fn key_type(&self) -> KeyType {
+        match self {
+            Algorithm::MLKEM512 | Algorithm::MLKEM768 | Algorithm::MLKEM1024 => KeyType::Kem,
+            Algorithm::MLDSA44 | Algorithm::MLDSA65 | Algorithm::MLDSA87 => KeyType::Signing,
+            Algorithm::SLHDSA128F | Algorithm::SLHDSA192S | Algorithm::SLHDSA256F => KeyType::Signing,
+        }
+    }
+}
+
+pub trait Keygen {
+    type PublicKey;
+    type SecretKey;
+
+    fn keypair() -> crate::Result<(Self::PublicKey, Self::SecretKey)>;
+}
+
+pub trait Sign {
+    type SecretKey;
+    type Signature;
+
+    fn sign(message: &[u8], sk: &Self::SecretKey) -> crate::Result<Self::Signature>;
+}
+
+pub trait Verify {
+    type PublicKey;
+    type Signature;
+
+    fn verify(message: &[u8], signature: &Self::Signature, pk: &Self::PublicKey) -> crate::Result<bool>;
+}
+
+pub trait SignatureScheme: Keygen + Sign + Verify {}
+
+pub trait KemScheme {
+    type PublicKey;
+    type SecretKey;
+    type Ciphertext;
+
+    fn keygen() -> crate::Result<(Self::PublicKey, Self::SecretKey)>;
+
+    fn encapsulate(pk: &Self::PublicKey) -> crate::Result<(Self::Ciphertext, Vec<u8>)>;
+
+    fn decapsulate(ct: &Self::Ciphertext, sk: &Self::SecretKey) -> crate::Result<Vec<u8>>;
 }
 
 pub fn keygen(algorithm: Algorithm) -> crate::Result<(Vec<u8>, Vec<u8>)> {
