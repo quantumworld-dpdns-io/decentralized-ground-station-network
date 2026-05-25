@@ -261,17 +261,16 @@ fn sphincs_internal_keypair(variant: SphincsVariant) -> crate::Result<(Vec<u8>, 
     let root = shake256_xof(&root_input, n);
 
     let mut pk = Vec::with_capacity(pk_size);
+    pk.push(variant as u8);
     pk.extend_from_slice(&pk_seed);
     pk.extend_from_slice(&root);
 
     let mut sk = Vec::with_capacity(sk_size);
+    sk.push(variant as u8);
     sk.extend_from_slice(&sk_seed);
     sk.extend_from_slice(&sk_prf);
     sk.extend_from_slice(&pk_seed);
     sk.extend_from_slice(&root);
-
-    pk[0] = variant as u8;
-    sk[0] = variant as u8;
 
     Ok((pk, sk))
 }
