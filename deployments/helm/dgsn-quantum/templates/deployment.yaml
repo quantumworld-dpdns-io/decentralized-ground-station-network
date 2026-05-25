@@ -1,0 +1,82 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "dgsn-quantum.fullname" . }}
+  labels:
+    {{- include "dgsn-quantum.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  strategy:
+    type: RollingUpdate
+  selector:
+    matchLabels:
+      {{- include "dgsn-quantum.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "dgsn-quantum.labels" . | nindent 8 }}
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "{{ .Values.service.metricsPort }}"
+    spec:
+      serviceAccountName: {{ .Values.serviceAccount.name }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: quantum
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - name: grpc
+              containerPort: {{ .Values.service.port }}
+              protocol: TCP
+            - name: metrics
+              containerPort: {{ .Values.service.metricsPort }}
+              protocol: TCP
+          env:
+            - name: DGSN_ENVIRONMENT
+              value: {{ .Values.config.environment | quote }}
+            - name: DGSN_SIMULATOR
+              value: {{ .Values.config.simulator | quote }}
+            - name: DGSN_QUANTUM_BACKEND
+              value: {{ .Values.config.backend | quote }}
+            - name: DGSN_MAX_SHOTS
+              value: {{ .Values.config.maxShots | quote }}
+            - name: DGSN_MAX_QUBITS
+              value: {{ .Values.config.maxQubits | quote }}
+            - name: DGSN_OPTIMIZATION_LEVEL
+              value: {{ .Values.config.optimizationLevel | quote }}
+            - name: DGSN_ERROR_MITIGATION
+              value: {{ .Values.config.errorMitigation | quote }}
+            - name: DGSN_QAOA_LAYERS
+              value: {{ .Values.config.qaoa.defaultLayers | quote }}
+            - name: DGSN_QAOA_ITERATIONS
+              value: {{ .Values.config.qaoa.maxIterations | quote }}
+            - name: DGSN_VQE_ANSATZ
+              value: {{ .Values.config.vqe.defaultAnsatz | quote }}
+            - name: DGSN_VQE_ITERATIONS
+              value: {{ .Values.config.vqe.maxIterations | quote }}
+            - name: DGSN_OTLP_ENDPOINT
+              value: {{ .Values.config.telemetry.otlpEndpoint | quote }}
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          livenessProbe:
+            grpc:
+              port: {{ .Values.service.port }}
+            initialDelaySeconds: 30
+            periodSeconds: 30
+          readinessProbe:
+            grpc:
+              port: {{ .Values.service.port }}
+            initialDelaySeconds: 15
+            periodSeconds: 10
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
