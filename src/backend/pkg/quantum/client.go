@@ -1,9 +1,11 @@
 package quantum
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"time"
 
@@ -382,8 +384,3 @@ func (c *GRPCClient) List(ctx context.Context, ownerID string, limit, offset int
 func (c *GRPCClient) Cancel(ctx context.Context, id string) error {
 	return fmt.Errorf("grpc client not fully implemented")
 }
-
-import (
-	"bytes"
-	"io"
-)
