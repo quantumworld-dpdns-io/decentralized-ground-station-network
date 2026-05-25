@@ -26,6 +26,7 @@ pub struct MerkleProof {
 impl MerkleTree {
     pub fn new() -> Self {
         MerkleTree {
+            leaves: Vec::new(),
             nodes: Vec::new(),
             leaf_count: 0,
             height: 0,
