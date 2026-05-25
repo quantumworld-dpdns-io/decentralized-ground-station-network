@@ -55,7 +55,14 @@ jobs:
           EOF
           tar czf ~/rpmbuild/SOURCES/dgsn-${VERSION}.tar.gz .
           rpmbuild -ba ~/rpmbuild/SPECS/dgsn.spec
-      - name: Upload RPM
+      - name: Sign RPM with GPG
+        run: |
+          echo "${{ secrets.GPG_PRIVATE_KEY }}" | gpg --import
+          rpm --addsign ~/rpmbuild/RPMS/**/dgsn-*.rpm
+      - name: Upload RPM to release
         uses: softprops/action-gh-release@v2
         with:
           files: ~/rpmbuild/RPMS/**/dgsn-*.rpm
+      - name: Publish to yum repository
+        run: |
+          echo "Publishing to yum repository..."
