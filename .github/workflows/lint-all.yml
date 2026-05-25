@@ -22,7 +22,7 @@ jobs:
         with:
           fetch-depth: 0
       - name: Mega-Linter
-        uses: oxsecurity/megalinter/flavors/ci_light@v8
+        uses: oxsecurity/megalinter/flavors/ci_light@v9
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           VALIDATE_ALL_CODEBASE: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
