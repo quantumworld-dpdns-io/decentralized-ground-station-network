@@ -1,7 +1,7 @@
 use crate::pqc::{Keygen, Sign, Verify};
 use rand::RngCore;
 use serde::{Deserialize, Serialize};
-use sha3::digest::{ExtendableOutput, Update, XofReader};
+use sha3::digest::{ExtendableOutput, Update};
 use sha3::{Sha3_256, Sha3_512, Shake256};
 use zeroize::Zeroize;
 
