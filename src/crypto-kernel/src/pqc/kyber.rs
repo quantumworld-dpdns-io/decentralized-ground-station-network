@@ -25,13 +25,22 @@ fn shake256_xof(data: &[u8], output_len: usize) -> Vec<u8> {
 }
 
 fn cbd(seed: &[u8], eta: usize) -> Vec<i16> {
-    let bytes = shake256_xof(seed, eta * 4);
-    let mut coeffs = Vec::with_capacity(eta * 16);
-    for i in 0..eta * 16 {
-        let byte_idx = (i * 2) / 8;
-        let bit_pos = (i * 2) % 8;
-        let a = ((bytes[byte_idx] >> bit_pos) & 1) as i16;
-        let b = ((bytes[byte_idx] >> (bit_pos + 1)) & 1) as i16;
+    let mut coeffs = Vec::with_capacity(256);
+    for i in 0..256 {
+        let mut a = 0i16;
+        for j in 0..eta {
+            let bit_idx = 2 * i * eta + j;
+            let byte_idx = bit_idx / 8;
+            let bit_pos = bit_idx % 8;
+            a += ((seed[byte_idx] >> bit_pos) & 1) as i16;
+        }
+        let mut b = 0i16;
+        for j in 0..eta {
+            let bit_idx = 2 * i * eta + eta + j;
+            let byte_idx = bit_idx / 8;
+            let bit_pos = bit_idx % 8;
+            b += ((seed[byte_idx] >> bit_pos) & 1) as i16;
+        }
         coeffs.push(a - b);
     }
     coeffs
