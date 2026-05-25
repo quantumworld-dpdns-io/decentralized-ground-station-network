@@ -346,7 +346,7 @@ fn dilithium_internal_keypair(variant: DilithiumVariant) -> crate::Result<(Vec<u
         for j in 0..128 {
             let (t1, _) = power2round(t[i][2 * j]);
             let (t1_next, _) = power2round(t[i][2 * j + 1]);
-            let packed = (t1 & 0x1FFF) as u16 | ((t1_next & 0x1FFF) as u16) << 13;
+            let packed = (t1 & 0x1FFF) as u32 | ((t1_next & 0x1FFF) as u32) << 13;
             if offset < pk_size {
                 pk[offset] = (packed & 0xFF) as u8;
             }
