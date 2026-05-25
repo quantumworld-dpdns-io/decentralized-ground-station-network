@@ -1,0 +1,22 @@
+apiVersion: v2
+name: dgsn-frontend
+description: DGSN Frontend - Next.js web application
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+icon: https://dgsn.io/icon.svg
+keywords:
+  - dgsn
+  - frontend
+  - nextjs
+  - react
+  - web
+home: https://dgsn.io
+sources:
+  - https://github.com/decentralized-ground-station-network
+maintainers:
+  - name: DGSN Team
+    email: dev@dgsn.io
+annotations:
+  artifacthub.io/category: web-application
+  artifacthub.io/license: MIT
