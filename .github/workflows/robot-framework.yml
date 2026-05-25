@@ -1,0 +1,178 @@
+name: Robot Framework Tests
+
+on:
+  push:
+    branches: [main, dev]
+    paths:
+      - "tests/**"
+      - "src/backend/**"
+      - "src/frontend/**"
+      - ".github/workflows/robot-framework.yml"
+  pull_request:
+    paths:
+      - "tests/**"
+      - "src/backend/**"
+      - "src/frontend/**"
+  workflow_dispatch:
+    inputs:
+      test_suite:
+        description: "Test suite to run"
+        type: choice
+        options:
+          - all
+          - api
+          - web
+          - integration
+          - regression
+        default: all
+      target_environment:
+        description: "Target environment"
+        type: choice
+        options:
+          - local
+          - staging
+          - production
+        default: staging
+
+concurrency:
+  group: robot-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  PYTHON_VERSION: "3.12"
+  ROBOT_DIR: tests/robot
+  RESULTS_DIR: robot-results
+  API_URL: ${{ vars.API_URL || 'http://localhost:8080' }}
+
+jobs:
+  robot-tests:
+    name: Robot Framework E2E Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: dgsn_test
+          POSTGRES_USER: dgsn_test
+          POSTGRES_PASSWORD: dgsn_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready -U dgsn_test
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+
+      - name: Install Robot Framework
+        run: |
+          pip install robotframework robotframework-seleniumlibrary robotframework-requests robotframework-databaselibrary robotframework-jsonlibrary robotframework-faker
+
+      - name: Install browser drivers
+        run: |
+          pip install webdrivermanager
+          webdrivermanager firefox chrome --linkpath /usr/local/bin
+          which geckodriver || true
+          which chromedriver || true
+
+      - name: Install application dependencies
+        working-directory: src/backend
+        run: |
+          go mod download
+          go build -o /tmp/dgsn-server ./cmd/dgsn-server/
+
+      - name: Start backend server
+        env:
+          DGSN_ENV: test
+          DGSN_DATABASE_DSN: postgres://dgsn_test:dgsn_test@localhost:5432/dgsn_test?sslmode=disable
+          DGSN_REDIS_ADDR: localhost:6379
+          DGSN_GRPC_PORT: 9090
+          DGSN_HTTP_PORT: 8080
+        run: |
+          /tmp/dgsn-server &
+          sleep 3
+          echo "Server PID: $!"
+
+      - name: Health check
+        run: |
+          for i in {1..10}; do
+            if curl -s http://localhost:8080/healthz | grep -q "ok"; then
+              echo "Server is healthy"
+              break
+            fi
+            echo "Waiting for server... ($i/10)"
+            sleep 2
+          done
+
+      - name: Run Robot Framework tests
+        working-directory: ${{ github.workspace }}
+        env:
+          API_URL: ${{ env.API_URL }}
+          ROBOT_TEST_SUITE: ${{ github.event.inputs.test_suite || 'all' }}
+          TARGET_ENV: ${{ github.event.inputs.target_environment || 'local' }}
+        run: |
+          mkdir -p ${{ env.RESULTS_DIR }}
+
+          if [ "${{ github.event.inputs.test_suite }}" = "all" ] || [ -z "${{ github.event.inputs.test_suite }}" ]; then
+            robot \
+              --outputdir ${{ env.RESULTS_DIR }} \
+              --variable API_URL:${{ env.API_URL }} \
+              --variable BROWSER:headlesschrome \
+              --variable ENV:${{ github.event.inputs.target_environment || 'local' }} \
+              --loglevel INFO \
+              ${{ env.ROBOT_DIR }}/
+          else
+            robot \
+              --outputdir ${{ env.RESULTS_DIR }} \
+              --variable API_URL:${{ env.API_URL }} \
+              --variable BROWSER:headlesschrome \
+              --variable ENV:${{ github.event.inputs.target_environment || 'local' }} \
+              --loglevel INFO \
+              --include ${{ github.event.inputs.test_suite }} \
+              ${{ env.ROBOT_DIR }}/
+          fi
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: robot-framework-results-${{ github.sha }}
+          path: ${{ env.RESULTS_DIR }}/
+          retention-days: 30
+
+      - name: Generate test report summary
+        if: always()
+        run: |
+          if [ -f "${{ env.RESULTS_DIR }}/output.xml" ]; then
+            python -c "
+            import xml.etree.ElementTree as ET
+            tree = ET.parse('${{ env.RESULTS_DIR }}/output.xml')
+            root = tree.getroot()
+            stats = root.find('.//statistics')
+            total = stats.findall('.//stat')[0]
+            print(f'Total: {total.get(\"pass\")} passed, {total.get(\"fail\")} failed')
+            "
+          fi
+
+      - name: Stop backend
+        if: always()
+        run: pkill dgsn-server || true
