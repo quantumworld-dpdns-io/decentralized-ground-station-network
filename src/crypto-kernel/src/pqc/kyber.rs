@@ -92,8 +92,8 @@ fn inv_ntt(coeffs: &[i16]) -> Vec<i16> {
             let l = start + i + len;
             if l < out.len() && k < out.len() {
                 let t = out[l];
-                out[l] = mod_reduce((out[k] - t) * inv_2);
-                out[k] = mod_reduce((out[k] + t) * inv_2);
+                out[l] = mod_reduce_i32(((out[k] as i32) - (t as i32)) * (inv_2 as i32));
+                out[k] = mod_reduce_i32(((out[k] as i32) + (t as i32)) * (inv_2 as i32));
             }
         }
         start += 2 * len;
