@@ -1,0 +1,107 @@
+name: dgsn-hermes-agent
+version: 0.1.0
+description: "Hermes autonomous agent for DGSN development, testing, and deployment"
+
+runtime:
+  type: python
+  entrypoint: agent.py
+  requirements:
+    - httpx>=0.27.0
+    - pydantic>=2.0.0
+    - pyyaml>=6.0
+    - click>=8.1.0
+
+capabilities:
+  - code_generation
+  - test_execution
+  - docker_management
+  - kubernetes_deployment
+  - documentation
+  - code_review
+
+context:
+  workspace: /workspace/dgsn
+  max_concurrent_tasks: 4
+  memory_limit_mb: 2048
+
+tools:
+  shell:
+    enabled: true
+    allowed_commands:
+      - "cargo *"
+      - "go *"
+      - "python *"
+      - "julia *"
+      - "npm *"
+      - "make *"
+      - "docker *"
+      - "kubectl *"
+      - "git *"
+      - "wasm-pack *"
+      - "wasmtime *"
+
+  git:
+    enabled: true
+    auto_commit: false
+    require_review: true
+
+  filesystem:
+    read_only_paths:
+      - /workspace/dgsn/configs/
+      - /workspace/dgsn/deployments/
+      - /workspace/dgsn/docs/
+    write_paths:
+      - /workspace/dgsn/src/
+      - /workspace/dgsn/scripts/
+      - /workspace/dgsn/tests/
+
+services:
+  redis:
+    type: cache
+    url: redis://localhost:6379/0
+    max_connections: 10
+
+  postgres:
+    type: database
+    url: postgresql://dgsn:dgsn@localhost:5432/dgsn
+    max_connections: 5
+
+  otel:
+    type: telemetry
+    endpoint: http://localhost:4318/v1/traces
+    service_name: hermes-agent
+    enabled: true
+
+monitoring:
+  metrics_port: 9100
+  health_check_path: /health
+  log_level: info
+
+workflows:
+  build-and-test:
+    steps:
+      - run: cargo build --release
+        cwd: /workspace/dgsn/src/crypto-kernel
+      - run: go test ./...
+        cwd: /workspace/dgsn/src/backend
+      - run: python -m pytest
+        cwd: /workspace/dgsn/src/quantum-engine
+      - run: julia --project -e 'using Pkg; Pkg.test()'
+        cwd: /workspace/dgsn/src/signal-processing
+    timeout_seconds: 600
+
+  deploy-staging:
+    steps:
+      - run: docker compose -f deployments/docker/docker-compose.yml build
+      - run: docker compose -f deployments/docker/docker-compose.yml up -d
+    timeout_seconds: 300
+
+security:
+  secrets:
+    - DGSN_DB_PASSWORD
+    - DGSN_GITHUB_TOKEN
+    - GRAFANA_PASSWORD
+  allowed_networks:
+    - localhost
+    - 172.28.0.0/16
+    - 10.0.0.0/8

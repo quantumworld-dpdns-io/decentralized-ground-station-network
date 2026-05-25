@@ -1,0 +1,141 @@
+apiVersion: cilium.io/v1alpha1
+kind: TracingPolicy
+metadata:
+  name: "dgsn-signal-processing-tracing"
+spec:
+  kprobes:
+    - call: "sys_write"
+      syscall: true
+      args:
+        - index: 0
+          type: int
+        - index: 1
+          type: bytearray
+        - index: 2
+          type: size_t
+      selectors:
+        - matchPIDs:
+            - operator: In
+              followForks: true
+              values:
+                - 0
+          matchArgs:
+            - index: 0
+              operator: "Equal"
+              values:
+                - "1"
+          matchActions:
+            - action: Post
+              argError: true
+    - call: "sys_read"
+      syscall: true
+      args:
+        - index: 0
+          type: int
+        - index: 1
+          type: bytearray
+        - index: 2
+          type: size_t
+      selectors:
+        - matchPIDs:
+            - operator: In
+              followForks: true
+              values:
+                - 0
+          matchActions:
+            - action: Post
+              argError: true
+    - call: "tcp_sendmsg"
+      syscall: false
+      args:
+        - index: 0
+          type: sock
+        - index: 1
+          type: size_t
+      selectors:
+        - matchPIDs:
+            - operator: In
+              followForks: true
+              values:
+                - 0
+    - call: "tcp_recvmsg"
+      syscall: false
+      args:
+        - index: 0
+          type: sock
+        - index: 1
+          type: size_t
+    - call: "sock_sendmsg"
+      syscall: false
+      args:
+        - index: 0
+          type: sock
+        - index: 1
+          type: size_t
+    - call: "sock_recvmsg"
+      syscall: false
+      args:
+        - index: 0
+          type: sock
+        - index: 1
+          type: size_t
+
+  processKprobes:
+    - call: "sched_process_exec"
+      syscall: false
+      args:
+        - index: 0
+          type: string
+    - call: "sched_process_exit"
+      syscall: false
+
+  processExec:
+    matchArgs:
+      - index: 0
+        operator: "In"
+        values:
+          - "/usr/local/bin/julia"
+          - "/usr/local/bin/python3"
+          - "/usr/local/bin/dgsn-signal-processor"
+          - "/usr/local/bin/dgsn-crypto-cli"
+          - "/usr/local/bin/dgsn-server"
+    matchActions:
+      - action: FollowFD
+      - action: Post
+
+  processFork:
+    matchParentArgs:
+      - index: 0
+        operator: "In"
+        values:
+          - "/usr/local/bin/julia"
+          - "/usr/local/bin/python3"
+          - "/usr/local/bin/dgsn-signal-processor"
+
+  fileAccess:
+    - matchPaths:
+        - prefix: "/dev/bus/usb"
+        - prefix: "/dev/sdr"
+        - prefix: "/tmp/dgsn-sdr"
+        - prefix: "/data/receipts"
+        - prefix: "/var/log/dgsn"
+      matchOperations:
+        - "read"
+        - "write"
+
+  network:
+    egress:
+      - matchDestinations:
+          - operator: "In"
+            values:
+              - "redis-primary:6379"
+              - "backend:9090"
+              - "otel-collector:4317"
+              - "s3:9000"
+      - matchProtocols:
+          - "tcp"
+      - matchPorts:
+          - "6379"
+          - "9090"
+          - "4317"
+          - "9000"

@@ -1,0 +1,50 @@
+name: Multi-Platform Package Release
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to release'
+        required: true
+
+jobs:
+  build-packages:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        arch: [amd64, arm64]
+        exclude:
+          - os: windows-latest
+            arch: arm64
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.23'
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Build Go binary
+        run: |
+          cd src/backend
+          GOOS=${{ matrix.os == 'ubuntu-latest' && 'linux' || matrix.os == 'macos-latest' && 'darwin' || 'windows' }} \
+          GOARCH=${{ matrix.arch }} \
+          go build -ldflags="-s -w -X main.Version=${{ github.event.release.tag_name || inputs.version }}" \
+            -o dgsn-backend-${{ matrix.os }}-${{ matrix.arch }}${{ matrix.os == 'windows-latest' && '.exe' || '' }} \
+            ./cmd/server
+      - name: Build Rust library
+        run: |
+          cd src/crypto-kernel
+          cargo build --release --locked --all-features
+      - name: Create archives
+        run: |
+          tar czf dgsn-${{ github.event.release.tag_name || inputs.version }}-${{ matrix.os }}-${{ matrix.arch }}.tar.gz \
+            src/backend/dgsn-backend-${{ matrix.os }}-${{ matrix.arch }}* \
+            -C src/crypto-kernel/target/release/ libcrypto_kernel.*
+      - name: Upload to release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dgsn-*.tar.gz

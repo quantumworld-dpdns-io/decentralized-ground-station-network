@@ -1,0 +1,41 @@
+version: 2
+updates:
+  - package-ecosystem: gomod
+    directory: /src/backend
+    schedule:
+      interval: weekly
+    labels:
+      - dependencies
+      - go
+
+  - package-ecosystem: cargo
+    directory: /src/crypto-kernel
+    schedule:
+      interval: weekly
+    labels:
+      - dependencies
+      - rust
+
+  - package-ecosystem: pip
+    directory: /src/quantum-engine
+    schedule:
+      interval: weekly
+    labels:
+      - dependencies
+      - python
+
+  - package-ecosystem: npm
+    directory: /src/frontend
+    schedule:
+      interval: weekly
+    labels:
+      - dependencies
+      - javascript
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    labels:
+      - dependencies
+      - ci

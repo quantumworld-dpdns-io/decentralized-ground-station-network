@@ -1,0 +1,62 @@
+replicaCount: 2
+
+image:
+  repository: ghcr.io/decentralized-ground-station-network/signal
+  tag: latest
+  pullPolicy: Always
+
+serviceAccount:
+  create: true
+  name: dgsn-signal
+
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 1001
+  fsGroup: 1001
+
+securityContext:
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop: [ALL]
+  readOnlyRootFilesystem: true
+
+service:
+  type: ClusterIP
+  port: 8110
+  metricsPort: 9091
+
+resources:
+  limits:
+    cpu: 4
+    memory: 8Gi
+  requests:
+    cpu: 1
+    memory: 2Gi
+
+config:
+  environment: production
+  logLevel: info
+  sampleRate: 2400000
+  fftSize: 4096
+  modulationTypes:
+    - FM
+    - AM
+    - BPSK
+    - QPSK
+    - QAM16
+    - QAM64
+    - QAM256
+    - OFDM
+  signalDetection:
+    threshold: -120
+    minBandwidth: 1000
+    maxBandwidth: 50000000
+  telemetry:
+    enabled: true
+    otlpEndpoint: dgsn-otel-collector:4317
+
+autoscaling:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 10
+  targetCPUUtilizationPercentage: 75

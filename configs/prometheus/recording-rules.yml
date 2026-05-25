@@ -1,0 +1,74 @@
+groups:
+  - name: dgsn_recording_rules
+    interval: 60s
+    rules:
+
+      # API Performance
+      - record: dgsn:api_request_duration_seconds:p50_5m
+        expr: histogram_quantile(0.50, sum(rate(dgsn_api_request_duration_seconds_bucket[5m])) by (le, route))
+      - record: dgsn:api_request_duration_seconds:p95_5m
+        expr: histogram_quantile(0.95, sum(rate(dgsn_api_request_duration_seconds_bucket[5m])) by (le, route))
+      - record: dgsn:api_request_duration_seconds:p99_5m
+        expr: histogram_quantile(0.99, sum(rate(dgsn_api_request_duration_seconds_bucket[5m])) by (le, route))
+      - record: dgsn:api_requests_per_second:rate5m
+        expr: sum(rate(dgsn_api_requests_total[5m]))
+      - record: dgsn:api_error_rate_5m
+        expr: sum(rate(dgsn_api_requests_total{status=~"5.."}[5m])) / sum(rate(dgsn_api_requests_total[5m]))
+
+      # Crypto Kernel
+      - record: dgsn:crypto_sign_duration_seconds:p50_5m
+        expr: histogram_quantile(0.50, sum(rate(dgsn_crypto_sign_duration_seconds_bucket[5m])) by (le, algorithm))
+      - record: dgsn:crypto_verify_duration_seconds:p95_5m
+        expr: histogram_quantile(0.95, sum(rate(dgsn_crypto_verify_duration_seconds_bucket[5m])) by (le, algorithm))
+      - record: dgsn:crypto_keygen_duration_seconds:p95_5m
+        expr: histogram_quantile(0.95, sum(rate(dgsn_crypto_keygen_duration_seconds_bucket[5m])) by (le, algorithm))
+      - record: dgsn:crypto_operations_per_second:rate5m
+        expr: sum(rate(dgsn_crypto_operations_total[5m]))
+      - record: dgsn:crypto_error_rate_5m
+        expr: sum(rate(dgsn_crypto_errors_total[5m])) / sum(rate(dgsn_crypto_operations_total[5m]))
+
+      # Quantum Engine
+      - record: dgsn:quantum_circuit_duration_seconds:p95_5m
+        expr: histogram_quantile(0.95, sum(rate(dgsn_quantum_circuit_duration_seconds_bucket[5m])) by (le, circuit_type))
+      - record: dgsn:quantum_circuits_per_hour:rate1h
+        expr: sum(rate(dgsn_quantum_circuits_total[1h]))
+      - record: dgsn:quantum_success_rate_5m
+        expr: 1 - (sum(rate(dgsn_quantum_errors_total[5m])) / sum(rate(dgsn_quantum_circuits_total[5m])))
+
+      # Signal Processing
+      - record: dgsn:signal_process_duration_seconds:p50_5m
+        expr: histogram_quantile(0.50, sum(rate(dgsn_signal_process_duration_seconds_bucket[5m])) by (le))
+      - record: dgsn:signal_process_duration_seconds:p95_5m
+        expr: histogram_quantile(0.95, sum(rate(dgsn_signal_process_duration_seconds_bucket[5m])) by (le))
+      - record: dgsn:signal_throughput_bytes_per_second:rate5m
+        expr: sum(rate(dgsn_signal_processed_bytes_total[5m]))
+      - record: dgsn:signal_classification_accuracy_5m
+        expr: sum(rate(dgsn_signal_classification_correct_total[5m])) / sum(rate(dgsn_signal_classification_total[5m]))
+
+      # Receipt Processing
+      - record: dgsn:receipts_created_per_hour:rate1h
+        expr: sum(rate(dgsn_receipts_created_total[1h]))
+      - record: dgsn:receipts_verified_per_hour:rate1h
+        expr: sum(rate(dgsn_receipts_verify_total[1h]))
+      - record: dgsn:receipt_verification_success_rate_5m
+        expr: sum(rate(dgsn_receipts_verify_success_total[5m])) / sum(rate(dgsn_receipts_verify_total[5m]))
+
+      # Infrastructure
+      - record: dgsn:node_memory_usage_ratio
+        expr: 1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)
+      - record: dgsn:node_cpu_usage_ratio
+        expr: 1 - (avg by(instance) (rate(node_cpu_seconds_total{mode="idle"}[5m])))
+      - record: dgsn:node_disk_usage_ratio
+        expr: 1 - (node_filesystem_avail_bytes{mountpoint="/"} / node_filesystem_size_bytes{mountpoint="/"})
+
+      # Redis
+      - record: dgsn:redis_memory_usage_ratio
+        expr: dgsn_redis_memory_used_bytes / dgsn_redis_memory_max_bytes
+      - record: dgsn:redis_hit_ratio_5m
+        expr: sum(rate(dgsn_redis_keyspace_hits_total[5m])) / (sum(rate(dgsn_redis_keyspace_hits_total[5m])) + sum(rate(dgsn_redis_keyspace_misses_total[5m])))
+
+      # Service Overview
+      - record: dgsn:service_uptime_ratio_30d
+        expr: avg_over_time(up[30d])
+      - record: dgsn:services_down_count
+        expr: count(up == 0)

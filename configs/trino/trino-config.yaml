@@ -1,0 +1,86 @@
+# Trino Query Engine Configuration
+# Federated SQL queries across DGSN data sources
+
+coordinator:
+  node_id: dgsn-trino-coordinator
+  port: 8080
+  discovery_uri: http://dgsn-trino-coordinator:8080
+  http_server_https_enabled: false
+  query_max_memory: 16GB
+  query_max_memory_per_node: 4GB
+  query_max_stage_count: 100
+  query_max_concurrent_queries: 20
+  query_min_expire_age: 30m
+
+worker:
+  node_id: dgsn-trino-worker
+  port: 8081
+  discovery_uri: http://dgsn-trino-coordinator:8080
+  worker_count: 3
+  http_server_https_enabled: false
+  query_max_memory_per_node: 4GB
+
+catalogs:
+  - name: dgsn_iceberg
+    type: iceberg
+    iceberg:
+      catalog_type: rest
+      uri: http://polaris:8181/api/catalog
+      warehouse: s3://dgsn-iceberg/warehouse
+      file_format: PARQUET
+      s3:
+        endpoint: http://minio:9000
+        region: us-east-1
+        path_style_access: true
+    properties:
+      iceberg.sort-order-layout-enabled: true
+      iceberg.statistics-enabled: true
+
+  - name: dgsn_postgres
+    type: postgresql
+    connection_url: jdbc:postgresql://postgres:5432/dgsn
+    connection_user: dgsn
+    connection_password: ${DGSN_DB_PASSWORD}
+
+  - name: dgsn_redis
+    type: redis
+    redis:
+      nodes:
+        - redis-primary:6379
+      password: ${DGSN_REDIS_PASSWORD}
+      table_name: dgsn_cache
+      key-prefix-schema: true
+    properties:
+      redis.key-delimiter: ":"
+
+  - name: dgsn_memory
+    type: memory
+    properties:
+      memory.max-data-per-node: 1GB
+
+query_rules:
+  - name: dgsn_ground_station_queries
+    description: "Resource limits and routing for ground station queries"
+    priority: 100
+    conditions:
+      - user_regex: "admin|analyst"
+      - source_regex: "grafana|superset"
+    actions:
+      - queue: "analytics"
+      - set_session_property: hash_partition_count = 10
+
+event_listener:
+  type: otel
+  otel:
+    endpoint: http://otel-collector:4317
+    service_name: dgsn-trino
+
+logging:
+  level: INFO
+  log_dir: /var/log/trino
+  max_size: 100MB
+  max_backup_count: 10
+
+monitoring:
+  metrics_enabled: true
+  metrics_port: 9091

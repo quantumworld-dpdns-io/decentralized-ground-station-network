@@ -1,0 +1,47 @@
+# DGSN Robot Framework Configuration
+# Phase 10 - Comprehensive Security & Functional Testing
+
+settings:
+  output_dir: results
+  log_level: INFO
+  random_seed: 42
+
+defaults:
+  suite_setup: Initialize Test Environment
+  suite_teardown: Cleanup Test Environment
+  test_setup: Setup Test Case
+  test_teardown: Teardown Test Case
+
+includes:
+  - resources/variables.resource
+  - resources/common.resource
+
+libraries:
+  - Collections
+  - JSONLibrary
+  - OperatingSystem
+  - RequestsLibrary
+  - String
+  - DateTime
+  - CryptoLibrary
+  - libraries/DgsnLibrary.py
+  - libraries/QuantumLibrary.py
+  - libraries/SecurityLibrary.py
+
+listeners:
+  - RobotListener
+
+run:
+  environments:
+    dev:
+      variables:
+        BASE_URL: http://localhost:8080
+        API_KEY: dev-key-12345
+    staging:
+      variables:
+        BASE_URL: https://staging.dgsn.space
+        API_KEY: ${STAGING_API_KEY}
+    prod:
+      variables:
+        BASE_URL: https://api.dgsn.space
+        API_KEY: ${PROD_API_KEY}

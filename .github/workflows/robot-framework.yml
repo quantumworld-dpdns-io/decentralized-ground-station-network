@@ -1,0 +1,65 @@
+name: Robot Framework Tests
+on:
+  push:
+    branches: [main, develop]
+    paths: ['tests/robot-framework/**', 'src/backend/**']
+  pull_request:
+    branches: [main]
+    paths: ['tests/robot-framework/**', 'src/backend/**']
+  schedule:
+    - cron: '0 2 * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  ROBOT_DIR: tests/robot-framework
+
+jobs:
+  robot:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ${{ env.ROBOT_DIR }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install deps
+        run: |
+          pip install robotframework robotframework-seleniumlibrary robotframework-requests \
+            robotframework-sshlibrary robotframework-databaselibrary \
+            robotframework-jsonlibrary robotframework-archivelibrary \
+            robotframework-faker
+      - name: Start backend
+        run: |
+          cd ../../src/backend
+          go run ./cmd/server &
+          sleep 5
+          echo "Backend started"
+      - name: Run OWASP test suites
+        run: |
+          robot --outputdir results --variable BROWSER:headlesschrome \
+            --include owasp --name "OWASP Security Suite" \
+            owasp_suites/
+      - name: Run API tests
+        run: |
+          robot --outputdir results --include api --name "API Test Suite" \
+            api_tests/
+      - name: Run integration tests
+        run: |
+          robot --outputdir results --name "Integration Test Suite" \
+            integration/
+      - name: Upload results
+        uses: actions/upload-artifact@v4
+        with:
+          name: robot-results
+          path: ${{ env.ROBOT_DIR }}/results/
+      - name: Publish report
+        uses: joonvena/robotframework-reporter-action@v2
+        with:
+          report_path: ${{ env.ROBOT_DIR }}/results
+          github_token: ${{ secrets.GITHUB_TOKEN }}

@@ -1,0 +1,22 @@
+apiVersion: v2
+name: dgsn-quantum
+description: DGSN Quantum Engine - Quantum circuit execution and optimization
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+icon: https://dgsn.io/icon.svg
+keywords:
+  - dgsn
+  - quantum
+  - qaoa
+  - vqe
+  - circuit
+home: https://dgsn.io
+sources:
+  - https://github.com/decentralized-ground-station-network
+maintainers:
+  - name: DGSN Team
+    email: dev@dgsn.io
+annotations:
+  artifacthub.io/category: ai-machine-learning
+  artifacthub.io/license: MIT

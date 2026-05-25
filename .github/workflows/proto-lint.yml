@@ -1,0 +1,37 @@
+name: Proto Lint
+on:
+  push:
+    branches: [main, develop]
+    paths: ['**/*.proto']
+  pull_request:
+    branches: [main]
+    paths: ['**/*.proto']
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  buf:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: bufbuild/buf-setup-action@v1
+        with:
+          version: latest
+      - name: Lint
+        uses: bufbuild/buf-lint-action@v1
+        with:
+          input: 'proto'
+      - name: Check breaking changes
+        uses: bufbuild/buf-breaking-action@v1
+        with:
+          input: 'proto'
+          against: 'https://github.com/${{ github.repository }}.git#branch=main,ref=refs/heads/main,subdir=proto'
+      - name: Generate
+        run: |
+          buf generate proto
+          buf mod update proto
+      - name: Format check
+        run: buf format -d proto

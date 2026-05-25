@@ -1,0 +1,125 @@
+name-template: 'v$RESOLVED_VERSION'
+tag-template: 'v$RESOLVED_VERSION'
+categories:
+  - title: '🚀 Features'
+    labels:
+      - 'feature'
+      - 'enhancement'
+      - 'feat'
+  - title: '🐛 Bug Fixes'
+    labels:
+      - 'fix'
+      - 'bugfix'
+      - 'bug'
+  - title: '🔐 Security'
+    labels:
+      - 'security'
+      - 'pqc'
+      - 'cryptography'
+  - title: '⚡ Performance'
+    labels:
+      - 'performance'
+      - 'benchmark'
+      - 'optimization'
+  - title: '🔧 Maintenance'
+    labels:
+      - 'chore'
+      - 'refactor'
+      - 'dependencies'
+      - 'ci'
+      - 'documentation'
+      - 'docs'
+  - title: '🧪 Testing'
+    labels:
+      - 'test'
+      - 'testing'
+      - 'e2e'
+      - 'integration'
+  - title: '🌍 Multi-Cloud'
+    labels:
+      - 'cloud'
+      - 'terraform'
+      - 'helm'
+      - 'deployment'
+  - title: '🔬 Quantum'
+    labels:
+      - 'quantum'
+      - 'qaoa'
+      - 'vqe'
+      - 'circuit'
+  - title: '🤖 AI/Agents'
+    labels:
+      - 'ai'
+      - 'agent'
+      - 'ml'
+  - title: '📖 Documentation'
+    labels:
+      - 'documentation'
+      - 'docs'
+      - 'adr'
+      - 'rfc'
+
+change-template: '- $TITLE @$AUTHOR (#$NUMBER)'
+change-title-escapes: '\<*_&'
+version-resolver:
+  major:
+    labels:
+      - 'major'
+      - 'breaking'
+  minor:
+    labels:
+      - 'minor'
+      - 'feature'
+  patch:
+    labels:
+      - 'patch'
+      - 'fix'
+      - 'bug'
+      - 'security'
+      - 'dependencies'
+  default: patch
+
+template: |
+  ## What's Changed
+
+  $CHANGES
+
+  ## Contributors
+
+  $CONTRIBUTORS
+
+  **Full Changelog**: https://github.com/$OWNER/$REPOSITORY/compare/$PREVIOUS_TAG...v$RESOLVED_VERSION
+
+autolabeler:
+  - label: 'documentation'
+    files:
+      - '*.md'
+      - 'docs/**/*.md'
+  - label: 'ci'
+    files:
+      - '.github/**/*'
+  - label: 'cloud'
+    files:
+      - 'deployments/helm/**/*'
+      - 'deployments/terraform/**/*'
+  - label: 'quantum'
+    files:
+      - 'src/quantum-engine/**/*'
+      - 'docs/quantum/**/*'
+  - label: 'cryptography'
+    files:
+      - 'src/crypto-kernel/**/*'
+  - label: 'ai'
+    files:
+      - 'src/agents/**/*'
+  - label: 'dependencies'
+    files:
+      - 'go.mod'
+      - 'Cargo.toml'
+      - 'pyproject.toml'
+      - 'package.json'
+    title:
+      - '/dependabot/'
+  - label: 'test'
+    files:
+      - 'tests/**/*'

@@ -1,0 +1,219 @@
+version: "3.9"
+
+name: dgsn
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: dgsn
+      POSTGRES_USER: dgsn
+      POSTGRES_PASSWORD: ${DGSN_DB_PASSWORD:-dgsn}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./init/postgres:/docker-entrypoint-initdb.d
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U dgsn"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - dgsn-net
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "/usr/local/etc/redis/redis.conf"]
+    volumes:
+      - ../../configs/redis/redis.conf:/usr/local/etc/redis/redis.conf
+      - redis_data:/data
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    networks:
+      - dgsn-net
+
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.100.0
+    command: ["--config=/etc/otel-collector-config.yaml"]
+    volumes:
+      - ../../configs/opentelemetry/otel-collector-config.yaml:/etc/otel-collector-config.yaml
+    ports:
+      - "4317:4317"
+      - "4318:4318"
+      - "8888:8888"
+      - "8889:8889"
+    depends_on:
+      - prometheus
+      - loki
+      - tempo
+    networks:
+      - dgsn-net
+
+  prometheus:
+    image: prom/prometheus:v2.53.0
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--web.console.libraries=/usr/share/prometheus/console_libraries"
+      - "--web.console.templates=/usr/share/prometheus/consoles"
+    volumes:
+      - ../../configs/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus_data:/prometheus
+    ports:
+      - "9090:9090"
+    networks:
+      - dgsn-net
+
+  tempo:
+    image: grafana/tempo:2.5.0
+    command: ["-config.file=/etc/tempo.yaml"]
+    volumes:
+      - ../../configs/tempo/tempo.yaml:/etc/tempo.yaml
+      - tempo_data:/tmp/tempo
+    ports:
+      - "3200:3200"
+      - "4317"
+      - "4318"
+    networks:
+      - dgsn-net
+
+  loki:
+    image: grafana/loki:3.0.0
+    command: ["-config.file=/etc/loki/config.yaml"]
+    volumes:
+      - ../../configs/loki/config.yaml:/etc/loki/config.yaml
+      - loki_data:/loki
+    ports:
+      - "3100:3100"
+    networks:
+      - dgsn-net
+
+  grafana:
+    image: grafana/grafana:11.1.0
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:-admin}
+      GF_INSTALL_PLUGINS: grafana-piechart-panel
+    volumes:
+      - ../../configs/grafana/dashboards:/etc/grafana/provisioning/dashboards
+      - ../../configs/grafana/datasources:/etc/grafana/provisioning/datasources
+      - grafana_data:/var/lib/grafana
+    ports:
+      - "3000:3000"
+    depends_on:
+      - prometheus
+      - loki
+      - tempo
+    networks:
+      - dgsn-net
+
+  vector-db:
+    image: qdrant/qdrant:v1.9.1
+    volumes:
+      - ../../configs/vector-db/config.yaml:/qdrant/config.yaml
+      - vector_data:/qdrant/storage
+    ports:
+      - "6333:6333"
+      - "6334:6334"
+    networks:
+      - dgsn-net
+
+  backend:
+    build:
+      context: ../../src/backend
+      dockerfile: ../../deployments/docker/Dockerfile.backend
+    ports:
+      - "9090:9090"
+      - "8080:8080"
+    environment:
+      DGSN_ENV: production
+      DGSN_DATABASE_DSN: postgres://dgsn:${DGSN_DB_PASSWORD:-dgsn}@postgres:5432/dgsn?sslmode=disable
+      DGSN_REDIS_ADDR: redis:6379
+      DGSN_OTEL_ENDPOINT: otel-collector:4317
+      DGSN_QUANTUM_ENDPOINT: quantum-engine:50051
+      DGSN_SIGNAL_ENDPOINT: signal-processing:50052
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      otel-collector:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "grpc-health-probe", "-addr=localhost:9090"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - dgsn-net
+
+  crypto-kernel:
+    build:
+      context: ../../src/crypto-kernel
+      dockerfile: ../../deployments/docker/Dockerfile.crypto
+    ports:
+      - "50050:50050"
+    networks:
+      - dgsn-net
+
+  quantum-engine:
+    build:
+      context: ../../src/quantum-engine
+      dockerfile: ../../deployments/docker/Dockerfile.quantum
+    ports:
+      - "50051:50051"
+    environment:
+      DGSN_REDIS_ADDR: redis:6379
+    depends_on:
+      - redis
+    networks:
+      - dgsn-net
+
+  signal-processing:
+    build:
+      context: ../../src/signal-processing
+      dockerfile: ../../deployments/docker/Dockerfile.signal
+    ports:
+      - "50052:50052"
+    depends_on:
+      - redis
+      - backend
+    networks:
+      - dgsn-net
+
+  frontend:
+    build:
+      context: ../../src/frontend
+      dockerfile: ../../deployments/docker/Dockerfile.frontend
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      NEXT_PUBLIC_API_URL: http://backend:8080
+      NEXT_PUBLIC_WS_URL: ws://backend:8080
+    depends_on:
+      - backend
+    networks:
+      - dgsn-net
+
+volumes:
+  postgres_data:
+  redis_data:
+  prometheus_data:
+  tempo_data:
+  loki_data:
+  grafana_data:
+  vector_data:
+
+networks:
+  dgsn-net:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.28.0.0/16

@@ -1,0 +1,243 @@
+syntax = "proto3";
+
+package signal.v1;
+
+option go_package = "github.com/quantumworld-dpdns-io/dgsn/api/proto/signal/v1;signalv1";
+
+import "dgsn/v1/common.proto";
+
+// Signal service for RF signal capture, processing and analysis
+service Signal {
+  // Upload a captured RF signal for processing
+  rpc UploadCapture(UploadCaptureRequest) returns (UploadCaptureResponse);
+
+  // Process a previously uploaded signal
+  rpc ProcessSignal(ProcessSignalRequest) returns (ProcessSignalResponse);
+
+  // Get signal quality and detection metrics
+  rpc GetSignalMetrics(GetSignalMetricsRequest) returns (SignalMetrics);
+
+  // Cross-correlate multiple signals for time difference of arrival
+  rpc CorrelateSignals(CorrelateSignalsRequest) returns (CorrelateSignalsResponse);
+
+  // Stream real-time signal data
+  rpc StreamSignal(stream SignalSample) returns (stream ProcessedSignal);
+
+  // Detect and classify modulation scheme
+  rpc ClassifyModulation(ClassifyModulationRequest) returns (ClassifyModulationResponse);
+
+  // Perform spectrum analysis on signal data
+  rpc AnalyzeSpectrum(AnalyzeSpectrumRequest) returns (SpectrumResult);
+}
+
+// Signal capture metadata
+message SignalCapture {
+  string id = 1;
+  string station_id = 2;
+  dgsn.v1.Timestamp captured_at = 3;
+  double center_frequency_hz = 4;
+  double sample_rate_hz = 5;
+  double bandwidth_hz = 6;
+  double gain_db = 7;
+  int64 num_samples = 8;
+  string format = 9;
+  bytes samples = 10;
+  CaptureConfig config = 11;
+  dgsn.v1.GeoLocation location = 12;
+  string antenna_type = 13;
+  double duration_seconds = 14;
+}
+
+message CaptureConfig {
+  double gain = 1;
+  double if_gain = 2;
+  double bb_gain = 3;
+  double bias_tee_voltage = 4;
+  bool enable_agc = 5;
+  bool enable_dc_block = 6;
+  int32 decimation_factor = 7;
+  string filter_mode = 8;
+  double frequency_correction_ppm = 9;
+  string antenna_port = 10;
+}
+
+message UploadCaptureRequest {
+  string station_id = 1;
+  double center_frequency_hz = 2;
+  double sample_rate_hz = 3;
+  double bandwidth_hz = 4;
+  double gain_db = 5;
+  bytes iq_samples = 6;
+  CaptureConfig config = 7;
+  dgsn.v1.GeoLocation location = 8;
+  string antenna_type = 9;
+}
+
+message UploadCaptureResponse {
+  string capture_id = 1;
+  int64 bytes_received = 2;
+  bool processing_started = 3;
+  double estimated_processing_time_s = 4;
+}
+
+message ProcessSignalRequest {
+  string capture_id = 1;
+  ProcessingConfig config = 2;
+}
+
+message ProcessingConfig {
+  bool enable_filtering = 1;
+  bool enable_downconversion = 2;
+  bool enable_demodulation = 3;
+  bool enable_spectrum_analysis = 4;
+  bool enable_modulation_classification = 5;
+  bool enable_signal_detection = 6;
+  int32 fft_size = 7;
+  string filter_type = 8;
+  repeated double filter_cutoffs_hz = 9;
+  string target_modulation = 10;
+  int32 decimation_factor = 11;
+}
+
+message ProcessSignalResponse {
+  string capture_id = 1;
+  bool success = 2;
+  SignalMetrics metrics = 3;
+  SpectrumResult spectrum = 4;
+  DemodulationResult demodulation = 5;
+  double processing_time_ms = 6;
+}
+
+message SignalMetrics {
+  double snr_db = 1;
+  double noise_floor_db = 2;
+  double signal_power_db = 3;
+  double peak_power_db = 4;
+  double peak_frequency_hz = 5;
+  double occupied_bandwidth_hz = 6;
+  double center_frequency_estimate_hz = 7;
+  double frequency_offset_hz = 8;
+  double evm_percent = 9;
+  double mer_db = 10;
+  double symbol_rate_estimate_hz = 11;
+  double duty_cycle = 12;
+  int32 num_signals_detected = 13;
+  repeated double signal_frequencies_hz = 14;
+}
+
+message GetSignalMetricsRequest {
+  string capture_id = 1;
+  bool detailed_analysis = 2;
+}
+
+message SpectrumResult {
+  repeated double frequencies_hz = 1;
+  repeated double power_spectral_density = 2;
+  repeated double power_spectrum = 3;
+  double resolution_bandwidth_hz = 4;
+  int32 nfft = 5;
+  string window_function = 6;
+  double noise_floor_db = 7;
+  double dynamic_range_db = 8;
+  repeated SpectralPeak peaks = 9;
+  repeated double spectrogram_times = 10;
+  repeated double spectrogram_frequencies = 11;
+  repeated float spectrogram_data = 12;
+}
+
+message SpectralPeak {
+  double frequency_hz = 1;
+  double amplitude_db = 2;
+  double bandwidth_hz = 3;
+  double snr_db = 4;
+  bool is_signal = 5;
+  string classification = 6;
+}
+
+message DemodulationResult {
+  string scheme = 1;
+  string modulation_class = 2;
+  double symbol_rate_hz = 3;
+  int32 num_symbols = 4;
+  repeated int32 symbols = 5;
+  bytes demodulated_data = 6;
+  double confidence = 7;
+  int32 bits_per_symbol = 8;
+  repeated double constellation_i = 9;
+  repeated double constellation_q = 10;
+}
+
+message CorrelateSignalsRequest {
+  repeated string capture_ids = 1;
+  CorrelateConfig config = 2;
+}
+
+message CorrelateConfig {
+  double max_lag_seconds = 1;
+  bool normalize = 2;
+  bool interpolate = 3;
+  int32 interpolation_factor = 4;
+  string correlation_method = 5;
+}
+
+message CorrelateSignalsResponse {
+  repeated double lags_seconds = 1;
+  repeated double correlation_values = 2;
+  repeated CrossCorrelationPair pairs = 3;
+  double estimated_time_delay = 4;
+  double confidence = 5;
+}
+
+message CrossCorrelationPair {
+  string signal_a_id = 1;
+  string signal_b_id = 2;
+  double peak_correlation = 3;
+  double time_delay_seconds = 4;
+  double phase_difference_degrees = 5;
+}
+
+message SignalSample {
+  string capture_id = 1;
+  double timestamp = 2;
+  double i = 3;
+  double q = 4;
+  int32 sample_index = 5;
+}
+
+message ProcessedSignal {
+  string capture_id = 1;
+  int32 sample_index = 2;
+  double filtered_i = 3;
+  double filtered_q = 4;
+  double magnitude = 5;
+  double phase = 6;
+  double instantaneous_frequency = 7;
+}
+
+message ClassifyModulationRequest {
+  string capture_id = 1;
+  bytes iq_samples = 2;
+  double sample_rate_hz = 3;
+  double center_frequency_hz = 4;
+}
+
+message ClassifyModulationResponse {
+  string modulation_class = 1;
+  string modulation_scheme = 2;
+  double confidence = 3;
+  int32 estimated_order = 4;
+  repeated string alternative_classes = 5;
+  repeated double class_probabilities = 6;
+  int32 classification_time_ms = 7;
+}
+
+message AnalyzeSpectrumRequest {
+  string capture_id = 1;
+  bytes iq_samples = 2;
+  double sample_rate_hz = 3;
+  int32 fft_size = 4;
+  string window_function = 5;
+  int32 num_averages = 6;
+  bool detect_peaks = 7;
+  bool compute_spectrogram = 8;
+}

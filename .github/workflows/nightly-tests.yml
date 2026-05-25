@@ -1,0 +1,60 @@
+name: Nightly Tests
+on:
+  schedule:
+    - cron: '0 0 * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-nightly
+  cancel-in-progress: true
+
+jobs:
+  go-tests:
+    uses: ./.github/workflows/go-build.yml
+    secrets: inherit
+  rust-tests:
+    uses: ./.github/workflows/rust-test.yml
+    secrets: inherit
+  python-tests:
+    uses: ./.github/workflows/python-test.yml
+    secrets: inherit
+  julia-tests:
+    uses: ./.github/workflows/julia-test.yml
+    secrets: inherit
+  nextjs-tests:
+    uses: ./.github/workflows/nextjs-test.yml
+    secrets: inherit
+  security-scan:
+    uses: ./.github/workflows/security-scan.yml
+    secrets: inherit
+  container-scan:
+    uses: ./.github/workflows/container-scan.yml
+    secrets: inherit
+  sbom:
+    uses: ./.github/workflows/sbom-generate.yml
+    secrets: inherit
+  robot:
+    uses: ./.github/workflows/robot-framework.yml
+    secrets: inherit
+
+  notify:
+    needs:
+      - go-tests
+      - rust-tests
+      - python-tests
+      - julia-tests
+      - nextjs-tests
+      - security-scan
+      - container-scan
+      - sbom
+      - robot
+    runs-on: ubuntu-latest
+    if: failure()
+    steps:
+      - name: Notify on failure
+        uses: slackapi/slack-github-action@v1.27
+        with:
+          channel-id: 'nightly-tests'
+          slack-message: '❌ Nightly tests failed! https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}'
+        env:
+          SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}

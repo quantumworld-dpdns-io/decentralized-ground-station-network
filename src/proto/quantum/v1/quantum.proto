@@ -1,0 +1,219 @@
+syntax = "proto3";
+
+package quantum.v1;
+
+option go_package = "github.com/quantumworld-dpdns-io/dgsn/api/proto/quantum/v1;quantumv1";
+
+import "dgsn/v1/common.proto";
+
+// Quantum service for submitting and managing quantum circuits
+service Quantum {
+  // Submit a quantum circuit for execution
+  rpc SubmitCircuit(SubmitCircuitRequest) returns (SubmitCircuitResponse);
+
+  // Get the result of a previously submitted circuit
+  rpc GetCircuitResult(GetCircuitResultRequest) returns (CircuitResult);
+
+  // List all submitted circuits with filtering
+  rpc ListCircuits(ListCircuitsRequest) returns (ListCircuitsResponse);
+
+  // Estimate the computational cost of a circuit
+  rpc EstimateCost(EstimateCostRequest) returns (CostEstimate);
+
+  // Cancel a pending or running circuit
+  rpc CancelCircuit(CancelCircuitRequest) returns (CancelCircuitResponse);
+
+  // Get available backends and their capabilities
+  rpc GetBackends(GetBackendsRequest) returns (GetBackendsResponse);
+
+  // Execute multiple circuits in batch
+  rpc BatchExecute(BatchExecuteRequest) returns (BatchExecuteResponse);
+}
+
+// A quantum circuit submitted for execution
+message QuantumCircuit {
+  string id = 1;
+  string name = 2;
+  CircuitFormat format = 3;
+  bytes circuit_data = 4;
+  int32 num_qubits = 5;
+  int32 num_classical_bits = 6;
+  int32 depth = 7;
+  int32 num_gates = 8;
+  map<string, double> parameters = 9;
+  repeated string measurements = 10;
+}
+
+enum CircuitFormat {
+  CIRCUIT_FORMAT_UNSPECIFIED = 0;
+  CIRCUIT_FORMAT_QASM_2 = 1;
+  CIRCUIT_FORMAT_QASM_3 = 2;
+  CIRCUIT_FORMAT_QISKIT = 3;
+  CIRCUIT_FORMAT_CUDA_Q = 4;
+  CIRCUIT_FORMAT_OPENQASM = 5;
+}
+
+message CircuitMetadata {
+  dgsn.v1.Timestamp submitted_at = 1;
+  dgsn.v1.Timestamp started_at = 2;
+  dgsn.v1.Timestamp completed_at = 3;
+  string submitted_by = 4;
+  string circuit_name = 5;
+  string description = 6;
+  map<string, string> tags = 7;
+  CircuitPriority priority = 8;
+}
+
+enum CircuitPriority {
+  CIRCUIT_PRIORITY_UNSPECIFIED = 0;
+  CIRCUIT_PRIORITY_LOW = 1;
+  CIRCUIT_PRIORITY_NORMAL = 2;
+  CIRCUIT_PRIORITY_HIGH = 3;
+  CIRCUIT_PRIORITY_CRITICAL = 4;
+}
+
+enum CircuitStatus {
+  CIRCUIT_STATUS_UNSPECIFIED = 0;
+  CIRCUIT_STATUS_PENDING = 1;
+  CIRCUIT_STATUS_QUEUED = 2;
+  CIRCUIT_STATUS_VALIDATING = 3;
+  CIRCUIT_STATUS_COMPILING = 4;
+  CIRCUIT_STATUS_RUNNING = 5;
+  CIRCUIT_STATUS_COMPLETED = 6;
+  CIRCUIT_STATUS_FAILED = 7;
+  CIRCUIT_STATUS_CANCELLED = 8;
+}
+
+message CircuitResult {
+  string circuit_id = 1;
+  CircuitStatus status = 2;
+  CircuitMetadata metadata = 3;
+  string backend_used = 4;
+  int32 shots = 5;
+  map<string, int32> counts = 6;
+  bytes statevector = 7;
+  repeated double expectation_values = 8;
+  double execution_time_ms = 9;
+  double sampling_time_ms = 10;
+  ErrorMetrics error_metrics = 11;
+  bytes optimized_circuit = 12;
+  repeated string error_messages = 13;
+}
+
+message ErrorMetrics {
+  double readout_error = 1;
+  double gate_error = 2;
+  double depolarizing_error = 3;
+  double thermal_error = 4;
+  double measurement_error = 5;
+  double total_error_rate = 6;
+  int32 num_error_mitigation_rounds = 7;
+}
+
+message SubmitCircuitRequest {
+  QuantumCircuit circuit = 1;
+  CircuitMetadata metadata = 2;
+  ExecutionConfig config = 3;
+}
+
+message ExecutionConfig {
+  string backend = 1;
+  int32 shots = 2;
+  bool use_error_mitigation = 3;
+  int32 optimization_level = 4;
+  string noise_model = 5;
+  int32 max_retries = 6;
+  int32 timeout_seconds = 7;
+  map<string, string> backend_options = 8;
+}
+
+message SubmitCircuitResponse {
+  string circuit_id = 1;
+  CircuitStatus status = 2;
+  dgsn.v1.Timestamp estimated_completion = 3;
+  int32 queue_position = 4;
+  CostEstimate cost_estimate = 5;
+}
+
+message GetCircuitResultRequest {
+  string circuit_id = 1;
+  bool include_statevector = 2;
+  bool include_optimized_circuit = 3;
+}
+
+message ListCircuitsRequest {
+  dgsn.v1.PaginationRequest pagination = 1;
+  CircuitStatus status_filter = 2;
+  string submitted_by = 3;
+  dgsn.v1.Timestamp submitted_after = 4;
+  dgsn.v1.Timestamp submitted_before = 5;
+}
+
+message ListCircuitsResponse {
+  repeated CircuitResult circuits = 1;
+  dgsn.v1.PaginationResponse pagination = 2;
+}
+
+message EstimateCostRequest {
+  QuantumCircuit circuit = 1;
+  ExecutionConfig config = 2;
+}
+
+message CostEstimate {
+  double estimated_cost_credits = 1;
+  int32 estimated_execution_time_ms = 2;
+  int32 estimated_queue_time_ms = 3;
+  int32 num_required_shots = 4;
+  string pricing_tier = 5;
+  int32 circuit_complexity_score = 6;
+  bool exceeds_free_tier = 7;
+}
+
+message CancelCircuitRequest {
+  string circuit_id = 1;
+  string reason = 2;
+}
+
+message CancelCircuitResponse {
+  bool success = 1;
+  CircuitStatus previous_status = 2;
+  string message = 3;
+}
+
+message GetBackendsRequest {
+  bool online_only = 1;
+  int32 min_qubits = 2;
+  repeated string required_features = 3;
+}
+
+message GetBackendsResponse {
+  repeated BackendInfo backends = 1;
+}
+
+message BackendInfo {
+  string name = 1;
+  string provider = 2;
+  string version = 3;
+  int32 num_qubits = 4;
+  repeated string supported_gates = 5;
+  bool is_online = 6;
+  bool is_simulator = 7;
+  double queue_size = 8;
+  double average_execution_time_ms = 9;
+  ErrorMetrics typical_errors = 10;
+  string status = 11;
+  map<string, string> features = 12;
+}
+
+message BatchExecuteRequest {
+  repeated SubmitCircuitRequest circuits = 1;
+  bool execute_parallel = 2;
+}
+
+message BatchExecuteResponse {
+  repeated SubmitCircuitResponse submissions = 1;
+  string batch_id = 2;
+  int32 total_circuits = 3;
+  int32 accepted_circuits = 4;
+  int32 rejected_circuits = 5;
+}

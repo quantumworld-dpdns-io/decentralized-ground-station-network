@@ -1,0 +1,185 @@
+# Apache Iceberg REST Catalog Configuration (Polaris)
+# Manages the DGSN data lakehouse for ground station telemetry and receipts
+
+catalog:
+  name: dgsn_ground_station_catalog
+  type: rest
+  uri: http://polaris:8181/api/catalog
+  warehouse: s3://dgsn-iceberg/warehouse
+  fileio:
+    type: s3
+    properties:
+      s3.endpoint: http://minio:9000
+      s3.access-key-id: ${AWS_ACCESS_KEY_ID}
+      s3.secret-access-key: ${AWS_SECRET_ACCESS_KEY}
+      s3.region: us-east-1
+      s3.path-style-access: true
+
+  credential:
+    client-id: dgsn-client
+    client-secret: ${POLARIS_CLIENT_SECRET}
+    oauth2-server-uri: http://polaris:8181/api/catalog/v1/oauth/tokens
+
+storage:
+  type: s3
+  allowed-locations:
+    - s3://dgsn-iceberg/
+  properties:
+    write.format.default: parquet
+    write.parquet.compression-codec: zstd
+    write.target-file-size-bytes: 134217728
+    read.split.target-size: 268435456
+    read.split.planning-lookback: 10
+
+namespaces:
+  - name: dgsn_receipts
+    description: "Ground station reception receipts"
+    properties:
+      location: s3://dgsn-iceberg/dgsn_receipts
+  - name: dgsn_telemetry
+    description: "Real-time and historical telemetry"
+    properties:
+      location: s3://dgsn-iceberg/dgsn_telemetry
+  - name: dgsn_scheduling
+    description: "Satellite pass scheduling and optimization"
+    properties:
+      location: s3://dgsn-iceberg/dgsn_scheduling
+  - name: dgsn_anomalies
+    description: "Anomaly detection results and security events"
+    properties:
+      location: s3://dgsn-iceberg/dgsn_anomalies
+
+tables:
+  - name: dgsn_receipts.receipts_v1
+    schema:
+      type: struct
+      fields:
+        - name: receipt_id
+          type: string
+          required: true
+        - name: station_id
+          type: string
+          required: true
+        - name: satellite_id
+          type: string
+          required: true
+        - name: timestamp
+          type: timestamp
+          required: true
+        - name: signal_hash
+          type: binary
+          required: true
+        - name: merkle_root
+          type: binary
+          required: true
+        - name: signature
+          type: binary
+          required: true
+        - name: public_key
+          type: binary
+          required: true
+        - name: algorithm
+          type: string
+          required: true
+        - name: signal_strength_db
+          type: double
+        - name: snr_db
+          type: double
+        - name: frequency_mhz
+          type: double
+        - name: duration_seconds
+          type: double
+        - name: verified
+          type: boolean
+        - name: chain_depth
+          type: int
+        - name: created_at
+          type: timestamp
+          required: true
+    partition-spec:
+      - name: day
+        source: timestamp
+        transform: day
+    sort-order:
+      - source: timestamp
+        direction: desc
+
+  - name: dgsn_telemetry.station_metrics
+    schema:
+      type: struct
+      fields:
+        - name: station_id
+          type: string
+          required: true
+        - name: timestamp
+          type: timestamp
+          required: true
+        - name: cpu_usage_pct
+          type: double
+        - name: memory_usage_pct
+          type: double
+        - name: disk_usage_pct
+          type: double
+        - name: network_rx_bytes
+          type: long
+        - name: network_tx_bytes
+          type: long
+        - name: temperature_celsius
+          type: double
+        - name: uptime_seconds
+          type: long
+        - name: antenna_azimuth
+          type: double
+        - name: antenna_elevation
+          type: double
+        - name: sdr_samples_per_sec
+          type: long
+    partition-spec:
+      - name: hour
+        source: timestamp
+        transform: hour
+
+  - name: dgsn_scheduling.passes
+    schema:
+      type: struct
+      fields:
+        - name: pass_id
+          type: string
+          required: true
+        - name: satellite_id
+          type: string
+          required: true
+        - name: station_id
+          type: string
+          required: true
+        - name: start_time
+          type: timestamp
+          required: true
+        - name: end_time
+          type: timestamp
+          required: true
+        - name: max_elevation
+          type: double
+        - name: azimuth_start
+          type: double
+        - name: azimuth_end
+          type: double
+        - name: frequency_mhz
+          type: double
+        - name: data_rate_kbps
+          type: double
+        - name: quantum_optimized
+          type: boolean
+        - name: qaoa_circuit_id
+          type: string
+        - name: confidence_score
+          type: double
+    partition-spec:
+      - name: month
+        source: start_time
+        transform: month
+
+retention:
+  dgsn_receipts.receipts_v1: 730 days
+  dgsn_telemetry.station_metrics: 90 days
+  dgsn_scheduling.passes: 365 days

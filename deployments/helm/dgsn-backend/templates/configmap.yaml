@@ -1,0 +1,35 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "dgsn-backend.fullname" . }}-config
+  labels:
+    {{- include "dgsn-backend.labels" . | nindent 4 }}
+data:
+  DGSN_ENVIRONMENT: {{ .Values.config.environment | quote }}
+  DGSN_LOG_LEVEL: {{ .Values.config.logLevel | quote }}
+  DGSN_LOG_FORMAT: {{ .Values.config.logFormat | quote }}
+  DGSN_DB_HOST: {{ .Values.config.database.host | quote }}
+  DGSN_DB_PORT: {{ .Values.config.database.port | quote }}
+  DGSN_DB_NAME: {{ .Values.config.database.name | quote }}
+  DGSN_DB_POOL_MIN: {{ .Values.config.database.poolMin | quote }}
+  DGSN_DB_POOL_MAX: {{ .Values.config.database.poolMax | quote }}
+  DGSN_REDIS_HOST: {{ .Values.config.redis.host | quote }}
+  DGSN_REDIS_PORT: {{ .Values.config.redis.port | quote }}
+  DGSN_REDIS_DB: {{ .Values.config.redis.db | quote }}
+  DGSN_GRPC_MAX_RECV_MSG_SIZE: {{ .Values.config.grpc.maxRecvMsgSize | quote }}
+  DGSN_GRPC_MAX_SEND_MSG_SIZE: {{ .Values.config.grpc.maxSendMsgSize | quote }}
+  DGSN_QUANTUM_ENABLED: {{ .Values.config.quantum.enabled | quote }}
+  DGSN_QUANTUM_SIMULATOR: {{ .Values.config.quantum.simulator | quote }}
+  DGSN_QUANTUM_BACKEND: {{ .Values.config.quantum.backend | quote }}
+  DGSN_PQC_ENABLED: {{ .Values.config.crypto.pqcEnabled | quote }}
+  DGSN_KEM_ALGORITHM: {{ .Values.config.crypto.kemAlgorithm | quote }}
+  DGSN_SIG_ALGORITHM: {{ .Values.config.crypto.signatureAlgorithm | quote }}
+  DGSN_RATE_LIMIT_ENABLED: {{ .Values.config.rateLimit.enabled | quote }}
+  DGSN_RATE_LIMIT_RPS: {{ .Values.config.rateLimit.requestsPerSecond | quote }}
+  DGSN_RATE_LIMIT_BURST: {{ .Values.config.rateLimit.burstSize | quote }}
+  DGSN_TELEMETRY_ENABLED: {{ .Values.config.telemetry.enabled | quote }}
+  DGSN_OTLP_ENDPOINT: {{ .Values.config.telemetry.otlpEndpoint | quote }}
+  DGSN_TRACES_SAMPLE_RATE: {{ .Values.config.telemetry.tracesSampleRate | quote }}
+  DGSN_HTTP_PORT: {{ .Values.service.httpPort | quote }}
+  DGSN_GRPC_PORT: {{ .Values.service.grpcPort | quote }}
+  DGSN_METRICS_PORT: {{ .Values.service.metricsPort | quote }}

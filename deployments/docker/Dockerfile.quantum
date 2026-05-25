@@ -1,0 +1,32 @@
+ARG PYTHON_VERSION=3.12
+ARG CUDA_VERSION=12.4
+
+FROM python:${PYTHON_VERSION}-slim AS base
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    gcc g++ git make curl wget \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /workspace
+
+COPY pyproject.toml README.md ./
+COPY qiskit_wrapper/ qiskit_wrapper/
+COPY cudaq_wrapper/ cudaq_wrapper/
+COPY circuits/ circuits/
+COPY __init__.py .
+
+RUN pip install --no-cache-dir -e ".[dev]"
+
+FROM base AS test
+
+RUN pip install pytest pytest-benchmark
+RUN python -m pytest --collect-only
+
+FROM base AS production
+
+RUN addgroup --system dgsn && adduser --system --ingroup dgsn dgsn
+USER dgsn
+
+EXPOSE 50051
+
+CMD ["python", "-m", "uvicorn", "dgsn_quantum_server:app", "--host", "0.0.0.0", "--port", "50051"]

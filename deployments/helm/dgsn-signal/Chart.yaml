@@ -1,0 +1,22 @@
+apiVersion: v2
+name: dgsn-signal
+description: DGSN Signal Processing - Julia-based signal processing engine
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+icon: https://dgsn.io/icon.svg
+keywords:
+  - dgsn
+  - signal
+  - processing
+  - julia
+  - sdr
+home: https://dgsn.io
+sources:
+  - https://github.com/decentralized-ground-station-network
+maintainers:
+  - name: DGSN Team
+    email: dev@dgsn.io
+annotations:
+  artifacthub.io/category: data-processing
+  artifacthub.io/license: MIT

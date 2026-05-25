@@ -1,0 +1,129 @@
+{
+  "mcp_servers": [
+    {
+      "name": "ground-station",
+      "description": "Ground station operations hub for registration, status, capabilities, and station listing",
+      "version": "1.0.0",
+      "transport": "stdio",
+      "tools": ["get_station", "list_stations", "update_status", "get_schedule"],
+      "schemas": {
+        "get_station": {
+          "parameters": {"station_id": {"type": "string", "description": "Ground station ID"}},
+          "returns": {"type": "object", "description": "Station details"}
+        },
+        "list_stations": {
+          "parameters": {"status": {"type": "string", "description": "Filter by status (online/offline/maintenance)", "optional": true}},
+          "returns": {"type": "array", "description": "List of stations"}
+        },
+        "update_status": {
+          "parameters": {
+            "station_id": {"type": "string"},
+            "new_status": {"type": "string", "enum": ["online", "offline", "maintenance", "degraded"]}
+          },
+          "returns": {"type": "object", "description": "Updated status confirmation"}
+        },
+        "get_schedule": {
+          "parameters": {
+            "station_id": {"type": "string"},
+            "date": {"type": "string", "format": "date", "optional": true}
+          },
+          "returns": {"type": "object", "description": "Schedule with passes"}
+        }
+      }
+    },
+    {
+      "name": "quantum",
+      "description": "Quantum circuit design, submission, and result retrieval",
+      "version": "1.0.0",
+      "transport": "stdio",
+      "tools": ["submit_circuit", "get_circuit_result", "estimate_cost", "list_circuits"],
+      "schemas": {
+        "submit_circuit": {
+          "parameters": {
+            "name": {"type": "string"},
+            "num_qubits": {"type": "integer"},
+            "depth": {"type": "integer"},
+            "gates": {"type": "array", "items": {"type": "string"}}
+          },
+          "returns": {"type": "object", "description": "Circuit submission confirmation"}
+        },
+        "get_circuit_result": {
+          "parameters": {"circuit_id": {"type": "string"}},
+          "returns": {"type": "object", "description": "Circuit result with state counts"}
+        },
+        "estimate_cost": {
+          "parameters": {
+            "num_qubits": {"type": "integer"},
+            "depth": {"type": "integer"},
+            "shots": {"type": "integer", "optional": true, "default": 1024}
+          },
+          "returns": {"type": "object", "description": "Cost estimate in USD"}
+        },
+        "list_circuits": {
+          "parameters": {"status": {"type": "string", "optional": true}},
+          "returns": {"type": "array", "description": "List of submitted circuits"}
+        }
+      }
+    },
+    {
+      "name": "signal",
+      "description": "Signal analysis and processing hub for RF data",
+      "version": "1.0.0",
+      "transport": "stdio",
+      "tools": ["process_signal", "get_metrics", "correlate", "classify"],
+      "schemas": {
+        "process_signal": {
+          "parameters": {
+            "data": {"type": "string", "description": "Base64-encoded IQ data"},
+            "sampling_rate": {"type": "number"},
+            "modulation": {"type": "string", "optional": true}
+          },
+          "returns": {"type": "object", "description": "Signal metadata"}
+        },
+        "get_metrics": {
+          "parameters": {"signal_id": {"type": "string"}},
+          "returns": {"type": "object", "description": "Signal quality metrics"}
+        },
+        "correlate": {
+          "parameters": {
+            "signal_id_a": {"type": "string"},
+            "signal_id_b": {"type": "string"}
+          },
+          "returns": {"type": "object", "description": "Cross-correlation results"}
+        },
+        "classify": {
+          "parameters": {"signal_id": {"type": "string"}},
+          "returns": {"type": "object", "description": "Signal classification"}
+        }
+      }
+    },
+    {
+      "name": "security",
+      "description": "Security monitoring, auditing, and vulnerability scanning",
+      "version": "1.0.0",
+      "transport": "stdio",
+      "tools": ["get_audit_log", "get_alerts", "scan_vulnerabilities"],
+      "schemas": {
+        "get_audit_log": {
+          "parameters": {
+            "start_time": {"type": "string", "format": "date-time", "optional": true},
+            "end_time": {"type": "string", "format": "date-time", "optional": true},
+            "limit": {"type": "integer", "optional": true, "default": 50}
+          },
+          "returns": {"type": "object", "description": "Audit log entries"}
+        },
+        "get_alerts": {
+          "parameters": {
+            "severity": {"type": "string", "enum": ["LOW", "MEDIUM", "HIGH", "CRITICAL"], "optional": true},
+            "acknowledged": {"type": "boolean", "optional": true, "default": false}
+          },
+          "returns": {"type": "object", "description": "Security alerts"}
+        },
+        "scan_vulnerabilities": {
+          "parameters": {"target": {"type": "string", "description": "IP, hostname, or network range"}},
+          "returns": {"type": "object", "description": "Scan results with findings"}
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,138 @@
+syntax = "proto3";
+
+package dgsn.v1;
+
+option go_package = "github.com/quantumworld-dpdns-io/dgsn/api/proto/dgsn/v1;dgsnv1";
+
+import "dgsn/v1/common.proto";
+
+// ProofOfReception service for creating and verifying reception receipts
+service ProofOfReception {
+  // Create a new proof-of-reception receipt
+  rpc CreateReceipt(CreateReceiptRequest) returns (Receipt);
+
+  // Verify the cryptographic validity of a receipt
+  rpc VerifyReceipt(VerifyReceiptRequest) returns (VerifyReceiptResponse);
+
+  // Get a specific receipt by ID
+  rpc GetReceipt(GetReceiptRequest) returns (Receipt);
+
+  // List receipts with optional filtering
+  rpc ListReceipts(ListReceiptsRequest) returns (ListReceiptsResponse);
+
+  // Batch verify multiple receipts at once
+  rpc BatchVerifyReceipts(BatchVerifyReceiptsRequest) returns (BatchVerifyReceiptsResponse);
+}
+
+// A proof-of-reception receipt with cryptographic verification
+message Receipt {
+  Metadata metadata = 1;
+  string station_id = 2;
+  string satellite_id = 3;
+  Timestamp reception_start = 4;
+  Timestamp reception_end = 5;
+  FrequencyBand frequency = 6;
+  string modulation = 7;
+  ReceptionMetrics metrics = 8;
+  Signature station_signature = 9;
+  Signature network_signature = 10;
+  MerkleProof merkle_proof = 11;
+  ReceiptStatus status = 12;
+  repeated string parent_receipt_ids = 13;
+  bytes receipt_hash = 14;
+  string chain_id = 15;
+  int64 chain_height = 16;
+}
+
+message ReceptionMetrics {
+  double average_snr_db = 1;
+  double max_snr_db = 2;
+  double min_snr_db = 3;
+  double bit_error_rate = 4;
+  double packet_loss_rate = 5;
+  int64 total_bytes_received = 6;
+  int64 total_packets_received = 7;
+  double doppler_shift_hz = 8;
+  double frequency_error_hz = 9;
+  double signal_duration_seconds = 10;
+  double data_rate_bps = 11;
+  map<string, double> custom_metrics = 12;
+}
+
+message MerkleProof {
+  bytes leaf_hash = 1;
+  int64 leaf_index = 2;
+  repeated bytes siblings = 3;
+  repeated bool path_directions = 4;
+  bytes root_hash = 5;
+}
+
+enum ReceiptStatus {
+  RECEIPT_STATUS_UNSPECIFIED = 0;
+  RECEIPT_STATUS_PENDING = 1;
+  RECEIPT_STATUS_VERIFIED = 2;
+  RECEIPT_STATUS_CONFIRMED = 3;
+  RECEIPT_STATUS_DISPUTED = 4;
+  RECEIPT_STATUS_REJECTED = 5;
+}
+
+message CreateReceiptRequest {
+  string station_id = 1;
+  string satellite_id = 2;
+  Timestamp reception_start = 3;
+  Timestamp reception_end = 4;
+  FrequencyBand frequency = 5;
+  string modulation = 6;
+  ReceptionMetrics metrics = 7;
+  bytes station_signature = 8;
+  string public_key_algorithm = 9;
+}
+
+message VerifyReceiptRequest {
+  string receipt_id = 1;
+  bytes receipt_data = 2;
+}
+
+message VerifyReceiptResponse {
+  bool is_valid = 1;
+  bool signature_valid = 2;
+  bool merkle_proof_valid = 3;
+  string verification_message = 4;
+  repeated string verification_errors = 5;
+  Timestamp verified_at = 6;
+}
+
+message GetReceiptRequest {
+  string receipt_id = 1;
+}
+
+message ListReceiptsRequest {
+  PaginationRequest pagination = 1;
+  string station_id = 2;
+  string satellite_id = 3;
+  ReceiptStatus status_filter = 4;
+  Timestamp start_time = 5;
+  Timestamp end_time = 6;
+}
+
+message ListReceiptsResponse {
+  repeated Receipt receipts = 1;
+  PaginationResponse pagination = 2;
+}
+
+message BatchVerifyReceiptsRequest {
+  repeated string receipt_ids = 1;
+  bool verify_merkle_proofs = 2;
+}
+
+message BatchVerifyReceiptsResponse {
+  repeated ReceiptVerificationResult results = 1;
+  int32 total_verified = 2;
+  int32 total_failed = 3;
+}
+
+message ReceiptVerificationResult {
+  string receipt_id = 1;
+  bool is_valid = 2;
+  string error_message = 3;
+}

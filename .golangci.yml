@@ -1,0 +1,31 @@
+linters:
+  enable:
+    - errcheck
+    - gosimple
+    - govet
+    - ineffassign
+    - staticcheck
+    - typecheck
+    - unused
+    - bodyclose
+    - noctx
+    - prealloc
+    - gosec
+    - revive
+    - goimports
+    - misspell
+    - unconvert
+    - unparam
+    - wastedassign
+
+linters-settings:
+  gosec:
+    excludes:
+      - G107
+  govet:
+    enable:
+      - fieldalignment
+      - shadow
+
+run:
+  timeout: 5m

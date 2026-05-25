@@ -1,0 +1,187 @@
+redis:
+  enabled: true
+  architecture: replication
+  auth:
+    enabled: true
+    existingSecret: dgsn-redis-credentials
+  master:
+    persistence:
+      size: 10Gi
+    resources:
+      requests:
+        cpu: 500m
+        memory: 1Gi
+      limits:
+        cpu: 2
+        memory: 4Gi
+  replica:
+    replicaCount: 3
+    persistence:
+      size: 10Gi
+    resources:
+      requests:
+        cpu: 300m
+        memory: 512Mi
+      limits:
+        cpu: 1
+        memory: 2Gi
+  metrics:
+    enabled: true
+    serviceMonitor:
+      enabled: true
+
+otelCollector:
+  enabled: true
+  image:
+    repository: otel/opentelemetry-collector-contrib
+    tag: 0.112.0
+  config:
+    receivers:
+      otlp:
+        protocols:
+          grpc:
+            endpoint: 0.0.0.0:4317
+          http:
+            endpoint: 0.0.0.0:4318
+    processors:
+      batch:
+        timeout: 1s
+        send_batch_size: 1024
+      memory_limiter:
+        check_interval: 1s
+        limit_mib: 512
+    exporters:
+      prometheus:
+        endpoint: 0.0.0.0:8889
+      otlp:
+        endpoint: "dgsn-otel-collector:4317"
+        tls:
+          insecure: true
+    service:
+      pipelines:
+        traces:
+          receivers: [otlp]
+          processors: [memory_limiter, batch]
+          exporters: [otlp]
+        metrics:
+          receivers: [otlp]
+          processors: [memory_limiter, batch]
+          exporters: [prometheus, otlp]
+        logs:
+          receivers: [otlp]
+          processors: [memory_limiter, batch]
+          exporters: [otlp]
+  resources:
+    requests:
+      cpu: 200m
+      memory: 256Mi
+    limits:
+      cpu: 1
+      memory: 1Gi
+
+prometheus:
+  enabled: true
+  alertmanager:
+    enabled: true
+    persistentVolume:
+      size: 5Gi
+  server:
+    persistentVolume:
+      size: 50Gi
+    retention: 15d
+    resources:
+      requests:
+        cpu: 500m
+        memory: 2Gi
+      limits:
+        cpu: 2
+        memory: 8Gi
+  kubeStateMetrics:
+    enabled: true
+  nodeExporter:
+    enabled: true
+  pushgateway:
+    enabled: false
+  serviceMonitors:
+    - name: dgsn-backend
+      selector:
+        matchLabels:
+          app.kubernetes.io/component: backend
+      endpoints:
+        - port: metrics
+          interval: 15s
+    - name: dgsn-crypto
+      selector:
+        matchLabels:
+          app.kubernetes.io/component: crypto
+      endpoints:
+        - port: metrics
+          interval: 15s
+
+grafana:
+  enabled: true
+  adminPassword: ""
+  persistence:
+    enabled: true
+    size: 10Gi
+  datasources:
+    - name: Prometheus
+      type: prometheus
+      url: http://dgsn-prometheus-server:80
+      access: proxy
+      isDefault: true
+    - name: Loki
+      type: loki
+      url: http://dgsn-loki:3100
+      access: proxy
+    - name: Tempo
+      type: tempo
+      url: http://dgsn-tempo:3200
+      access: proxy
+  dashboardProviders:
+    - name: dgsn
+      orgId: 1
+      folder: DGSN
+      type: file
+      options:
+        path: /var/lib/grafana/dashboards/dgsn
+  dashboards:
+    dgsn:
+      dgsn-overview:
+        url: https://raw.githubusercontent.com/dgsn/dashboards/main/dgsn-overview.json
+      quantum-metrics:
+        url: https://raw.githubusercontent.com/dgsn/dashboards/main/quantum-metrics.json
+      signal-processing:
+        url: https://raw.githubusercontent.com/dgsn/dashboards/main/signal-processing.json
+  resources:
+    requests:
+      cpu: 200m
+      memory: 256Mi
+    limits:
+      cpu: 1
+      memory: 1Gi
+
+minio:
+  enabled: true
+  mode: distributed
+  replicas: 4
+  persistence:
+    size: 100Gi
+  resources:
+    requests:
+      cpu: 500m
+      memory: 1Gi
+    limits:
+      cpu: 4
+      memory: 8Gi
+  buckets:
+    - name: dgsn-signals
+      policy: none
+    - name: dgsn-results
+      policy: none
+    - name: dgsn-backups
+      policy: none
+  users:
+    - accessKey: dgsn
+      secretKey: changeme
+      policy: readwrite

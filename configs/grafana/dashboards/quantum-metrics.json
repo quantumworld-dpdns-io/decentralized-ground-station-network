@@ -1,0 +1,168 @@
+{
+  "title": "DGSN Quantum Engine Performance",
+  "version": 1,
+  "uid": "dgsn-quantum",
+  "description": "Quantum circuit optimization metrics, QAOA/VQE performance, and error tracking",
+  "tags": ["dgsn", "quantum", "circuits"],
+  "timezone": "utc",
+  "editable": false,
+  "panels": [
+    {
+      "title": "Circuits Executed (24h)",
+      "type": "stat",
+      "gridPos": {"h": 4, "w": 4, "x": 0, "y": 0},
+      "targets": [{"expr": "sum(increase(dgsn_quantum_circuits_total[24h]))"}],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {"mode": "thresholds"},
+          "thresholds": {"mode": "absolute", "steps": [{"color": "red", "value": 0}, {"color": "green", "value": 1}]}
+        }
+      }
+    },
+    {
+      "title": "Circuit Success Rate",
+      "type": "stat",
+      "gridPos": {"h": 4, "w": 4, "x": 4, "y": 0},
+      "targets": [{"expr": "dgsn:quantum_success_rate_5m"}],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "color": {"mode": "thresholds"},
+          "thresholds": {"mode": "absolute", "steps": [{"color": "red", "value": 0}, {"color": "yellow", "value": 0.9}, {"color": "green", "value": 0.98}]}
+        }
+      }
+    },
+    {
+      "title": "Active Optimizations",
+      "type": "stat",
+      "gridPos": {"h": 4, "w": 4, "x": 8, "y": 0},
+      "targets": [{"expr": "dgsn_quantum_active_circuits"}],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {"mode": "thresholds"},
+          "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": 0}, {"color": "red", "value": 10}]}
+        }
+      }
+    },
+    {
+      "title": "GPU Utilization",
+      "type": "stat",
+      "gridPos": {"h": 4, "w": 4, "x": 12, "y": 0},
+      "targets": [{"expr": "dgsn_quantum_gpu_utilization_percent"}],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "color": {"mode": "thresholds"},
+          "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": 0}, {"color": "yellow", "value": 50}, {"color": "red", "value": 90}]}
+        }
+      }
+    },
+    {
+      "title": "Circuits by Type (24h)",
+      "type": "stat",
+      "gridPos": {"h": 4, "w": 4, "x": 16, "y": 0},
+      "targets": [{"expr": "sum by(circuit_type) (increase(dgsn_quantum_circuits_total[24h]))"}],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {"mode": "palette-classic"}
+        }
+      }
+    },
+    {
+      "title": "Error Rate",
+      "type": "stat",
+      "gridPos": {"h": 4, "w": 4, "x": 20, "y": 0},
+      "targets": [{"expr": "rate(dgsn_quantum_errors_total[5m])"}],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops",
+          "color": {"mode": "thresholds"},
+          "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": 0}, {"color": "yellow", "value": 1}, {"color": "red", "value": 5}]}
+        }
+      }
+    },
+    {
+      "title": "Circuit Duration (p95 by type)",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 4},
+      "targets": [{"expr": "dgsn:quantum_circuit_duration_seconds:p95_5m", "legendFormat": "{{circuit_type}}"}],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "color": {"mode": "palette-classic"},
+          "custom": {"showPoints": "never"}
+        }
+      }
+    },
+    {
+      "title": "Circuit Throughput",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 4},
+      "targets": [
+        {"expr": "sum by(circuit_type) (rate(dgsn_quantum_circuits_total[5m]))", "legendFormat": "{{circuit_type}}"}
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops",
+          "color": {"mode": "palette-classic"},
+          "custom": {"showPoints": "never"}
+        }
+      }
+    },
+    {
+      "title": "QAOA Optimization Progress",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 8, "x": 0, "y": 12},
+      "targets": [
+        {"expr": "dgsn_quantum_qaoa_angles_gamma", "legendFormat": "gamma"},
+        {"expr": "dgsn_quantum_qaoa_angles_beta", "legendFormat": "beta"}
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "palette-classic"},
+          "custom": {"showPoints": "never"}
+        }
+      }
+    },
+    {
+      "title": "VQE Energy Convergence",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 8, "x": 8, "y": 12},
+      "targets": [
+        {"expr": "dgsn_quantum_vqe_energy", "legendFormat": "energy"},
+        {"expr": "dgsn_quantum_vqe_energy_best", "legendFormat": "best"}
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "palette-classic"},
+          "custom": {"showPoints": "never"}
+        }
+      }
+    },
+    {
+      "title": "Error Distribution",
+      "type": "piechart",
+      "gridPos": {"h": 8, "w": 8, "x": 16, "y": 12},
+      "targets": [
+        {"expr": "sum by(error_type) (increase(dgsn_quantum_errors_total[24h]))"}
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "palette-classic"}
+        }
+      }
+    }
+  ],
+  "templating": {
+    "list": [
+      {
+        "name": "datasource",
+        "type": "datasource",
+        "query": "prometheus"
+      }
+    ]
+  }
+}

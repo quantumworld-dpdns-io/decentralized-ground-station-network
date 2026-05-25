@@ -1,0 +1,77 @@
+name: Rust Test
+on:
+  push:
+    branches: [main, develop]
+    paths: ['src/crypto-kernel/**', '**/Cargo.toml', '**/Cargo.lock', '**.rs']
+  pull_request:
+    branches: [main]
+    paths: ['src/crypto-kernel/**', '**/Cargo.toml', '**/Cargo.lock', '**.rs']
+  schedule:
+    - cron: '0 6 * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  WORKING_DIR: src/crypto-kernel
+
+jobs:
+  test:
+    strategy:
+      matrix:
+        features: [default, pqc, full]
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ${{ env.WORKING_DIR }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: llvm-tools-preview
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: ${{ env.WORKING_DIR }}
+      - name: Install dependencies
+        run: sudo apt-get update && sudo apt-get install -y libssl-dev pkg-config
+      - name: Test (default features)
+        if: matrix.features == 'default'
+        run: cargo test --release --locked -- --nocapture
+      - name: Test (PQC features)
+        if: matrix.features == 'pqc'
+        run: cargo test --release --locked --features pqc -- --nocapture
+      - name: Test (all features)
+        if: matrix.features == 'full'
+        run: cargo test --release --locked --all-features -- --nocapture
+      - name: Doc tests
+        if: matrix.features == 'full'
+        run: cargo test --release --locked --all-features --doc
+      - name: Fuzz targets check
+        if: matrix.features == 'full'
+        run: |
+          cargo install cargo-fuzz --locked
+          cargo fuzz list
+          for fuzz_target in $(cargo fuzz list); do
+            cargo fuzz build "$fuzz_target"
+          done
+      - name: Upload coverage
+        uses: codecov/codecov-action@v4
+        with:
+          flags: rust
+
+  miri:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ${{ env.WORKING_DIR }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@nightly
+        with:
+          components: miri
+      - uses: Swatinem/rust-cache@v2
+      - name: Miri test
+        run: cargo miri test --all-features

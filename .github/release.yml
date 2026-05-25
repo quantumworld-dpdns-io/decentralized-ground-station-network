@@ -1,0 +1,55 @@
+changelog:
+  categories:
+    - title: '🚀 Features & Enhancements'
+      labels:
+        - 'feature'
+        - 'enhancement'
+        - 'feat'
+    - title: '🐛 Bug Fixes'
+      labels:
+        - 'fix'
+        - 'bugfix'
+        - 'bug'
+    - title: '🔐 Security & Cryptography'
+      labels:
+        - 'security'
+        - 'pqc'
+        - 'cryptography'
+    - title: '⚡ Performance Improvements'
+      labels:
+        - 'performance'
+        - 'optimization'
+    - title: '🔬 Quantum Computing'
+      labels:
+        - 'quantum'
+        - 'qaoa'
+        - 'vqe'
+    - title: '🌍 Infrastructure & Deployment'
+      labels:
+        - 'cloud'
+        - 'terraform'
+        - 'helm'
+        - 'deployment'
+        - 'infra'
+    - title: '🤖 AI & Agents'
+      labels:
+        - 'ai'
+        - 'agent'
+        - 'ml'
+    - title: '📖 Documentation'
+      labels:
+        - 'documentation'
+        - 'docs'
+    - title: '🧪 Testing & CI'
+      labels:
+        - 'test'
+        - 'testing'
+        - 'ci'
+    - title: '🔧 Maintenance'
+      labels:
+        - 'chore'
+        - 'refactor'
+        - 'dependencies'
+    - title: 'Other Changes'
+      labels:
+        - '*'

@@ -1,0 +1,64 @@
+name: Quantum Benchmarks
+on:
+  push:
+    branches: [main]
+    paths: ['src/quantum-engine/**', 'src/crypto-kernel/**']
+  schedule:
+    - cron: '0 8 * * 1'
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  QENGINE_DIR: src/quantum-engine
+  KERNEL_DIR: src/crypto-kernel
+
+jobs:
+  benchmark:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install deps
+        run: |
+          pip install -e "${{ env.QENGINE_DIR }}[dev,quantum]"
+          pip install pytest-benchmark asv
+      - name: Quantum circuit benchmarks
+        run: |
+          cd ${{ env.QENGINE_DIR }}
+          python -m pytest tests/benchmarks/ -v --benchmark-only --benchmark-json=bench_results.json
+      - name: QAOA circuit benchmark
+        run: |
+          cd ${{ env.QENGINE_DIR }}
+          python -m pytest tests/benchmarks/ -v -k "qaoa" --benchmark-only --benchmark-json=qaoa_bench.json
+      - name: VQE circuit benchmark
+        run: |
+          cd ${{ env.QENGINE_DIR }}
+          python -m pytest tests/benchmarks/ -v -k "vqe" --benchmark-only --benchmark-json=vqe_bench.json
+      - name: Crypto kernel benchmark
+        run: |
+          cd ${{ env.KERNEL_DIR }}
+          cargo bench --all-features -- --json > crypto_bench.json
+      - name: Upload benchmark results
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-results
+          path: |
+            ${{ env.QENGINE_DIR }}/bench_results.json
+            ${{ env.QENGINE_DIR }}/qaoa_bench.json
+            ${{ env.QENGINE_DIR }}/vqe_bench.json
+            ${{ env.KERNEL_DIR }}/crypto_bench.json
+      - name: Compare with previous
+        uses: benchmark-action/github-action-benchmark@v1
+        with:
+          tool: 'pytest'
+          output-file-path: ${{ env.QENGINE_DIR }}/bench_results.json
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          auto-push: true
+          alert-threshold: '120%'
+          comment-on-alert: true

@@ -1,0 +1,59 @@
+name: Mega Linter
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  mega-linter:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+      checks: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Mega-Linter
+        uses: oxsecurity/megalinter/flavors/ci_light@v8
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VALIDATE_ALL_CODEBASE: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+          DEFAULT_BRANCH: main
+          ENABLE_LINTERS: |
+            GO_GOLANGCI_LINT,
+            GO_REVIVE,
+            RUST_CLIPPY,
+            PYTHON_RUFF,
+            PYTHON_BLACK,
+            PYTHON_MYPY,
+            PYTHON_PYLINT,
+            JAVASCRIPT_ES,
+            JAVASCRIPT_STANDARD,
+            TYPESCRIPT_ES,
+            TYPESCRIPT_STANDARD,
+            YAML_PRETTIER,
+            YAML_YAMLLINT,
+            MARKDOWN_MARKDOWN_LINT,
+            MARKDOWN_MARKDOWN_TABLE_FORMATTER,
+            DOCKERFILE_HADOLINT,
+            ACTION_ACTIONLINT,
+            JSON_JSONLINT,
+            REPOSITORY_CHECKOV,
+            REPOSITORY_DEVSKIM,
+            SPELL_CSPELL,
+          PRINT_ALPACA: false
+          SHOW_ELAPSED_TIME: true
+          FILEIO_REPORT: true
+          FAIL_IF_MISSING_LINTER_IN_FLAVOR: true
+          EMAIL_REPORTER: false
+          GITHUB_COMMENT_REPORTER: true
+          GITHUB_STATUS_REPORTER: true
+          FLAVORS_SUGGESTIONS: true

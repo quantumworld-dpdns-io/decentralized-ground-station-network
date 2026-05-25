@@ -1,0 +1,9 @@
+[package]
+name = "dgsn_receipt"
+version = "0.1.0"
+description = "DGSN proof-of-reception ZKP circuit"
+authors = ["DGSN"]
+compiler_version = ">=0.34.0"
+license = "MIT"
+
+[dependencies]

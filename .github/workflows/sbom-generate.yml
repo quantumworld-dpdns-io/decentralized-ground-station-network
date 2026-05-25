@@ -1,0 +1,49 @@
+name: SBOM Generate
+on:
+  push:
+    branches: [main]
+  release:
+    types: [published]
+  schedule:
+    - cron: '0 2 * * 0'
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  sbom:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Generate SBOM with Syft
+        uses: anchore/sbom-action@v0
+        with:
+          path: .
+          format: spdx-json
+          output-file: dgsn-sbom.spdx.json
+      - name: Generate CycloneDX SBOM
+        uses: CycloneDX/gh-gomod-generate-sbom@v2
+        with:
+          version: v1
+          output: dgsn-sbom.cdx.json
+          args: mod -licenses -json
+      - name: Validate SPDX SBOM
+        run: |
+          pip install spdx-tools
+          spdx-validate dgsn-sbom.spdx.json
+      - name: Upload SBOMs
+        uses: actions/upload-artifact@v4
+        with:
+          name: dgsn-sbom
+          path: |
+            dgsn-sbom.spdx.json
+            dgsn-sbom.cdx.json
+      - name: Attach to release
+        if: github.event_name == 'release'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dgsn-sbom.spdx.json
+            dgsn-sbom.cdx.json

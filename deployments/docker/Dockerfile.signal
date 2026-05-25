@@ -1,0 +1,40 @@
+ARG JULIA_VERSION=1.10.4
+ARG ALPINE_VERSION=3.20
+
+FROM julia:${JULIA_VERSION}-alpine${ALPINE_VERSION} AS builder
+
+RUN apk add --no-cache git build-base cmake python3
+
+WORKDIR /workspace
+
+COPY Project.toml Manifest.toml ./
+COPY src/ src/
+
+RUN julia -e 'using Pkg; Pkg.activate("."); Pkg.instantiate(); Pkg.precompile()'
+
+RUN julia -e '
+using PackageCompiler;
+create_sysimage(
+    [:DGSN_SignalProcessing],
+    sysimage_path="dgsn_signal.so",
+    precompile_execution_file="src/precompile.jl",
+    cpu_target="generic;haswell",
+)' 2>/dev/null || echo "Sysimage creation deferred to runtime"
+
+FROM alpine:${ALPINE_VERSION}
+
+RUN apk add --no-cache libstdc++ libgfortran libatomic
+
+COPY --from=builder /workspace/dgsn_signal.so /usr/local/lib/
+COPY --from=builder /workspace/src/ /opt/dgsn/signal-processing/src/
+COPY --from=builder /workspace/Project.toml /opt/dgsn/signal-processing/
+
+RUN addgroup -S dgsn && adduser -S -G dgsn dgsn
+USER dgsn
+
+EXPOSE 50052
+
+COPY --from=builder /usr/local/julia/bin/julia /usr/local/bin/julia
+ENV JULIA_LOAD_PATH="/opt/dgsn/signal-processing:"
+
+CMD ["julia", "-e", "using DGSN_SignalProcessing; DGSN_SignalProcessing.serve(50052)"]

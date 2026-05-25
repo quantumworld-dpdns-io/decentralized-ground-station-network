@@ -1,0 +1,106 @@
+{
+  "name": "DGSN Ground Station Agent",
+  "version": "0.1.0",
+  "description": "Codex Desktop agent for the Decentralized Ground Station Network development",
+  "capabilities": [
+    "code-review",
+    "refactoring",
+    "testing",
+    "documentation",
+    "architecture",
+    "deployment"
+  ],
+  "tools": {
+    "enabled": [
+      "read_file",
+      "write_file",
+      "edit_file",
+      "search_files",
+      "run_command",
+      "git_operations",
+      "terminal"
+    ]
+  },
+  "context": {
+    "maxTokens": 128000,
+    "includeFiles": [
+      "**/*.rs",
+      "**/*.go",
+      "**/*.py",
+      "**/*.jl",
+      "**/*.ts",
+      "**/*.tsx",
+      "**/*.yaml",
+      "**/*.json",
+      "**/*.toml",
+      "configs/**/*",
+      "docs/**/*.md",
+      "deployments/**/*"
+    ],
+    "ignoreFiles": [
+      "target/**",
+      "node_modules/**",
+      "**/*.wasm",
+      "**/*.so",
+      "**/*.dll",
+      "**/*.dylib"
+    ]
+  },
+  "workflows": {
+    "build": {
+      "description": "Build all components",
+      "steps": [
+        { "name": "crypto-kernel", "command": "cd src/crypto-kernel && cargo build --release" },
+        { "name": "backend", "command": "cd src/backend && go build -o ../../build/dgsn-server ./cmd/server" },
+        { "name": "quantum-engine", "command": "cd src/quantum-engine && pip install -e ." },
+        { "name": "signal-processing", "command": "cd src/signal-processing && julia --project -e 'using Pkg; Pkg.resolve()'" },
+        { "name": "frontend", "command": "cd src/frontend && npm ci && npm run build" }
+      ]
+    },
+    "test": {
+      "description": "Run all tests",
+      "steps": [
+        { "name": "crypto-kernel", "command": "cd src/crypto-kernel && cargo test" },
+        { "name": "backend", "command": "cd src/backend && go test ./..." },
+        { "name": "quantum-engine", "command": "cd src/quantum-engine && python -m pytest" },
+        { "name": "signal-processing", "command": "cd src/signal-processing && julia --project -e 'using Pkg; Pkg.test()'" },
+        { "name": "frontend", "command": "cd src/frontend && npm test" }
+      ]
+    },
+    "wasm-build": {
+      "description": "Build WASM modules",
+      "steps": [
+        { "name": "crypto-wasm", "command": "cd src/crypto-kernel && bash wasm/build.sh" }
+      ]
+    },
+    "docker-up": {
+      "description": "Start development environment",
+      "steps": [
+        { "name": "docker-compose", "command": "cd deployments/docker && docker compose up -d" }
+      ]
+    }
+  },
+  "prompts": {
+    "systemPrompt": "You are a Codex agent specialized in the Decentralized Ground Station Network (DGSN). You have deep knowledge of Rust crypto (post-quantum), Go backend, Python quantum computing, Julia DSP, and Next.js frontend.",
+    "welcomeMessage": "DGSN Development Agent ready. Available workflows: build, test, wasm-build, docker-up."
+  },
+  "mcp": {
+    "servers": [
+      {
+        "name": "dgsn-crypto",
+        "url": "http://localhost:8090/mcp",
+        "description": "Crypto kernel MCP server"
+      },
+      {
+        "name": "dgsn-quantum",
+        "url": "http://localhost:8091/mcp",
+        "description": "Quantum engine MCP server"
+      },
+      {
+        "name": "dgsn-signal",
+        "url": "http://localhost:8092/mcp",
+        "description": "Signal processing MCP server"
+      }
+    ]
+  }
+}
