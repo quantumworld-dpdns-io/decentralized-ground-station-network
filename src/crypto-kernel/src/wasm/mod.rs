@@ -2,14 +2,12 @@ use crate::pqc::{self, Algorithm};
 use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen]
-pub struct WasmCrypto {
-    inner: (),
-}
+pub struct WasmCrypto;
 
 #[wasm_bindgen]
 impl WasmCrypto {
     pub fn new() -> Self {
-        WasmCrypto { inner: () }
+        WasmCrypto
     }
 
     pub fn keygen(algorithm_name: &str) -> Result<JsValue, JsValue> {
