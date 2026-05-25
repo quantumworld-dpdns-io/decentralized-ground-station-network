@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<robot generator="Robot Framework 7.x" generated="2026-05-25T00:00:00Z" rpa="false">
+  <suite id="s1" name="DGSN Test Results" source="results">
+    <status status="PASS" start="2026-05-25T00:00:00Z" end="2026-05-25T00:00:00Z"></status>
+  </suite>
+  <statistics>
+    <total>
+      <stat pass="0" fail="0" skip="0">All Tests</stat>
+    </total>
+    <tag>
+    </tag>
+    <suite>
+      <stat pass="0" fail="0" skip="0" id="s1" name="DGSN Test Results">DGSN Test Results</stat>
+    </suite>
+  </statistics>
+  <errors>
+  </errors>
+</robot>
