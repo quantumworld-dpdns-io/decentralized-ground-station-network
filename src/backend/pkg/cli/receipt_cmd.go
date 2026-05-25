@@ -1,8 +1,10 @@
 package cli
 
 import (
-	"encoding/csv"
+	"context"
+	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"strconv"
 	"strings"
@@ -390,8 +392,3 @@ func (c *CLI) exportJSONL(out io.Writer, receipts []receipts.Receipt) error {
 	}
 	return nil
 }
-
-import (
-	"encoding/json"
-	"io"
-)
