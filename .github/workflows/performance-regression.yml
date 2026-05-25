@@ -1,0 +1,63 @@
+name: Performance Regression
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'src/backend/**'
+      - 'src/crypto-kernel/**'
+      - 'src/quantum-engine/**'
+  schedule:
+    - cron: '0 10 * * 1'
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  detect:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.23'
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install tools
+        run: |
+          pip install asv
+          go install golang.org/x/perf/cmd/benchstat@latest
+      - name: Go benchmarks
+        run: |
+          cd src/backend
+          go test -bench=. -benchmem -count=5 -run=^$ ./... > /tmp/go_bench.txt
+          go install golang.org/x/perf/cmd/benchstat@latest
+          benchstat /tmp/go_bench.txt
+      - name: Rust benchmarks
+        run: |
+          cd src/crypto-kernel
+          cargo bench --all-features > /tmp/rust_bench.txt
+      - name: Python benchmarks
+        run: |
+          cd src/quantum-engine
+          python -m pytest tests/benchmarks/ --benchmark-only --benchmark-json=perf_results.json
+      - name: Compare with baseline
+        uses: benchmark-action/github-action-benchmark@v1
+        with:
+          tool: 'pytest'
+          output-file-path: src/quantum-engine/perf_results.json
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          auto-push: true
+          alert-threshold: '150%'
+          comment-on-alert: true
+      - name: Check for regressions
+        run: |
+          if grep -q "FAIL\|REGRESSION\|+[0-9]*\.[0-9]*%" /tmp/rust_bench.txt; then
+            echo "Regressions detected!"
+            exit 1
+          fi
