@@ -1,3 +1,4 @@
+pub mod ffi;
 pub mod kdf;
 pub mod merkle;
 pub mod pqc;
