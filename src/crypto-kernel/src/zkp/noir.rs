@@ -136,17 +136,15 @@ impl NoirBackend {
                     return Err(ZkpError::InvalidProofData("proof too short".into()));
                 }
 
+                let claimed_hash = &data[..32];
+                let proof_body = &data[32..];
+
                 let mut hasher = blake3::Hasher::new();
-                for input in &proof.public_inputs {
-                    hasher.update(input);
-                }
+                hasher.update(proof_body);
                 hasher.update(&vk.verifying_data);
                 let expected = hasher.finalize();
 
-                let proof_hash = &data[..32];
-                let valid = proof_hash == expected.as_bytes();
-
-                Ok(valid)
+                Ok(claimed_hash == expected.as_bytes())
             }
             _ => Err(ZkpError::InvalidProofData("expected single proof type".into())),
         }
