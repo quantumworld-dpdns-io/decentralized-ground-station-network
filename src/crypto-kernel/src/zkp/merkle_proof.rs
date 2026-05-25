@@ -147,13 +147,12 @@ impl MerkleZkpProver {
 
                 for (i, sibling) in siblings.iter().enumerate() {
                     let go_right = path.get(i).copied().unwrap_or(true);
-                    let parent = if go_right {
-                        Self::hash_node(&current_bytes, sibling)
-                    } else {
-                        Self::hash_node(sibling, &current_bytes)
-                    };
-                    current_bytes = parent.as_bytes().to_vec();
-                    current = parent;
+                let parent = if go_right {
+                    Self::hash_node(&current_bytes, sibling)
+                } else {
+                    Self::hash_node(sibling, &current_bytes)
+                };
+                current_bytes = parent.as_bytes().to_vec();
                 }
 
                 let computed_root = current_bytes.as_slice() == _root;
