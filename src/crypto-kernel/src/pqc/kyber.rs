@@ -37,9 +37,9 @@ fn cbd(seed: &[u8], eta: usize) -> Vec<i16> {
     coeffs
 }
 
-fn mod_reduce(x: i16) -> i16 {
+fn mod_reduce(x: i32) -> i16 {
     let q = 3329i16;
-    let mut r = x % q;
+    let mut r = (x % q as i32) as i16;
     if r < 0 {
         r += q;
     }
