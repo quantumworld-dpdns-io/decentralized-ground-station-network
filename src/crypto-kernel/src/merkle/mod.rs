@@ -74,8 +74,10 @@ impl MerkleTree {
         }
 
         let root = nodes.last().cloned();
+        let leaf_data = leaves.iter().cloned().collect();
 
         Ok(MerkleTree {
+            leaves: leaf_data,
             nodes,
             leaf_count,
             height,
