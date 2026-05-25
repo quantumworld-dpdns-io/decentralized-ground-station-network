@@ -4,7 +4,6 @@ pub mod noir;
 pub mod risc_zero;
 
 use serde::{Deserialize, Serialize};
-use std::fmt;
 
 pub type ZkpResult<T> = Result<T, ZkpError>;
 
