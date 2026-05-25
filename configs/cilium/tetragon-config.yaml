@@ -1,0 +1,139 @@
+apiVersion: cilium.io/v1alpha1
+kind: TracingPolicy
+metadata:
+  name: "dgsn-ground-station-processes"
+spec:
+  kprobes:
+    - call: "sys_openat"
+      syscall: true
+      args:
+        - index: 0
+          type: int
+        - index: 1
+          type: string
+      selectors:
+        - matchArgs:
+            - index: 0
+              operator: "Equal"
+              values:
+                - "0"  # O_RDONLY
+          matchActions:
+            - action: Sigkill
+      matchPIDs:
+        - operator: In
+          followForks: true
+          values:
+            - 0
+
+    - call: "sys_connect"
+      syscall: true
+      args:
+        - index: 0
+          type: int
+        - index: 1
+          type: sockaddr
+      selectors:
+        - matchArgs:
+            - index: 0
+              operator: "GT"
+              values:
+                - "1024"
+
+    - call: "sys_write"
+      syscall: true
+      args:
+        - index: 0
+          type: int
+        - index: 1
+          type: bytearray
+      selectors:
+        - matchArgs:
+            - index: 0
+              operator: "Equal"
+              values:
+                - "1"
+
+    - call: "sys_read"
+      syscall: true
+      args:
+        - index: 0
+          type: int
+        - index: 1
+          type: bytearray
+      selectors:
+        - matchArgs:
+            - index: 0
+              operator: "Equal"
+              values:
+                - "0"
+
+  processKprobes:
+    - call: "tcp_connect"
+      syscall: false
+      args:
+        - index: 0
+          type: sock
+
+    - call: "tcp_close"
+      syscall: false
+      args:
+        - index: 0
+          type: sock
+
+  processExec:
+    matchArgs:
+      - index: 0
+        operator: "In"
+        values:
+          - "/usr/local/bin/dgsn-server"
+          - "/usr/local/bin/dgsn-crypto-cli"
+          - "/usr/local/bin/python3"
+          - "/usr/local/bin/julia"
+
+  processFork:
+    matchParentArgs:
+      - index: 0
+        operator: "In"
+        values:
+          - "/usr/local/bin/dgsn-server"
+          - "/usr/local/bin/dgsn-crypto-cli"
+
+  processExit:
+    matchArgs:
+      - index: 0
+        operator: "Exists"
+
+  network:
+    egress:
+      - matchDestinations:
+          - operator: "NotIn"
+            values:
+              - "8.8.8.8"
+              - "1.1.1.1"
+              - "dgsn-internal.svc.cluster.local"
+      - matchProtocols:
+          - "tcp"
+          - "udp"
+      - matchPorts:
+          - "9090"
+          - "8080"
+          - "50050"
+          - "50051"
+          - "50052"
+          - "6379"
+          - "5432"
+          - "4317"
+
+  fileAccess:
+    - matchPaths:
+        - prefix: "/etc/dgsn/"
+        - prefix: "/var/lib/dgsn/"
+        - prefix: "/data/"
+      matchOperations:
+        - "read"
+        - "write"
+
+  capabilities:
+    - matchCapabilities:
+        - "CAP_NET_BIND_SERVICE"
+        - "CAP_SYS_ADMIN"
