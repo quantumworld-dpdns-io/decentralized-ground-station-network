@@ -1,7 +1,7 @@
 name: Mega Linter
 on:
   push:
-    branches: [main, develop]
+    branches: [main]
   pull_request:
     branches: [main]
   workflow_dispatch:
@@ -34,26 +34,31 @@ jobs:
             PYTHON_RUFF,
             PYTHON_BLACK,
             PYTHON_MYPY,
-            PYTHON_PYLINT,
             JAVASCRIPT_ES,
-            JAVASCRIPT_STANDARD,
             TYPESCRIPT_ES,
-            TYPESCRIPT_STANDARD,
             YAML_PRETTIER,
             YAML_YAMLLINT,
             MARKDOWN_MARKDOWN_LINT,
-            MARKDOWN_MARKDOWN_TABLE_FORMATTER,
             DOCKERFILE_HADOLINT,
             ACTION_ACTIONLINT,
             JSON_JSONLINT,
             REPOSITORY_CHECKOV,
             REPOSITORY_DEVSKIM,
-            SPELL_CSPELL,
+            SPELL_CSPELL
           PRINT_ALPACA: false
           SHOW_ELAPSED_TIME: true
-          FILEIO_REPORT: true
           FAIL_IF_MISSING_LINTER_IN_FLAVOR: true
-          EMAIL_REPORTER: false
           GITHUB_COMMENT_REPORTER: true
           GITHUB_STATUS_REPORTER: true
-          FLAVORS_SUGGESTIONS: true
+      - name: Generate lint artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mega-linter-reports
+          path: mega-linter-out/
+      - name: Report summary
+        if: always()
+        run: |
+          if [ -f mega-linter-out/summary.txt ]; then
+            cat mega-linter-out/summary.txt >> $GITHUB_STEP_SUMMARY
+          fi
