@@ -1,0 +1,154 @@
+name: Quantum Benchmarks
+
+on:
+  schedule:
+    - cron: "0 2 * * 1"  # Every Monday at 2 AM UTC
+  push:
+    paths:
+      - "src/quantum-engine/**"
+      - "src/quantum-circuits/**"
+      - ".github/workflows/quantum-bench.yml"
+  workflow_dispatch:
+    inputs:
+      benchmark_suite:
+        description: "Benchmark suite to run"
+        type: choice
+        options:
+          - all
+          - scheduling
+          - optimization
+          - signal_processing
+          - qiskit_wrapper
+        default: all
+      full_run:
+        description: "Run full benchmark suite"
+        type: boolean
+        default: false
+
+concurrency:
+  group: quantum-bench-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  PYTHON_VERSION: "3.12"
+  BENCHMARK_DIR: benchmark-results
+
+jobs:
+  quantum-benchmarks:
+    name: Quantum Circuit Benchmarks
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: src/quantum-engine/pyproject.toml
+
+      - name: Install dependencies
+        working-directory: src/quantum-engine
+        run: |
+          pip install -e ".[dev]"
+          pip install pytest-benchmark
+
+      - name: Run benchmarks (all)
+        if: github.event.inputs.benchmark_suite == 'all' || github.event_name == 'schedule'
+        working-directory: src/quantum-engine
+        run: |
+          mkdir -p ${{ env.BENCHMARK_DIR }}
+          python -m pytest circuits/scheduling/tests/ circuits/optimization/tests/ circuits/signal_processing/tests/ qiskit_wrapper/tests/ \
+            --benchmark-only \
+            --benchmark-json=${{ env.BENCHMARK_DIR }}/all-benchmarks.json \
+            --benchmark-min-rounds=10 \
+            --benchmark-max-time=30
+
+      - name: Run benchmarks (category)
+        if: github.event.inputs.benchmark_suite != 'all' && github.event_name != 'schedule'
+        working-directory: src/quantum-engine
+        run: |
+          mkdir -p ${{ env.BENCHMARK_DIR }}
+          python -m pytest ${{ github.event.inputs.benchmark_suite }}/tests/ \
+            --benchmark-only \
+            --benchmark-json=${{ env.BENCHMARK_DIR }}/${{ github.event.inputs.benchmark_suite }}-benchmarks.json \
+            --benchmark-min-rounds=10 \
+            --benchmark-max-time=30
+
+      - name: Upload benchmark results as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: quantum-benchmark-results-${{ github.sha }}
+          path: ${{ env.BENCHMARK_DIR }}/
+          retention-days: 90
+
+      - name: Compare with previous results
+        if: github.ref == 'refs/heads/main'
+        run: |
+          echo "Benchmark comparison for commit ${{ github.sha }}"
+          echo "Date: $(date -u)"
+          echo "Suite: ${{ github.event.inputs.benchmark_suite || 'all' }}"
+
+      - name: Generate benchmark report
+        working-directory: src/quantum-engine
+        run: |
+          python -c "
+          import json, glob, os
+          results_dir = '${{ env.BENCHMARK_DIR }}'
+          report = {'commit': '${{ github.sha }}', 'date': '$(date -u)', 'suites': {}}
+          for bench_file in glob.glob(os.path.join(results_dir, '*.json')):
+              with open(bench_file) as f:
+                  data = json.load(f)
+              suite_name = os.path.basename(bench_file).replace('.json', '')
+              benchmarks = []
+              for b in data.get('benchmarks', []):
+                  benchmarks.append({
+                      'name': b.get('name'),
+                      'mean': b.get('stats', {}).get('mean'),
+                      'stddev': b.get('stats', {}).get('stddev'),
+                      'min': b.get('stats', {}).get('min'),
+                      'max': b.get('stats', {}).get('max'),
+                      'rounds': b.get('stats', {}).get('rounds'),
+                  })
+              report['suites'][suite_name] = benchmarks
+          with open(os.path.join(results_dir, 'report.json'), 'w') as f:
+              json.dump(report, f, indent=2)
+          print(f'Report generated with {sum(len(v) for v in report[\"suites\"].values())} benchmarks')
+          "
+
+      - name: Save benchmark results
+        uses: actions/github-script@v7
+        if: github.ref == 'refs/heads/main' && github.event_name == 'schedule'
+        with:
+          script: |
+            const fs = require('fs');
+            const path = require('path');
+            const resultsDir = 'src/quantum-engine/${{ env.BENCHMARK_DIR }}';
+            console.log(`Benchmark results saved for ${new Date().toISOString()}`);
+
+  circuit-validation:
+    name: OpenQASM Circuit Validation
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate QASM files
+        run: |
+          errors=0
+          for qasm_file in src/quantum-circuits/**/*.qasm; do
+            if [ -f "$qasm_file" ]; then
+              echo "Validating: $qasm_file"
+              if ! head -1 "$qasm_file" | grep -q "OPENQASM 3.0"; then
+                echo "  WARNING: Missing OpenQASM 3.0 header"
+                errors=$((errors + 1))
+              fi
+              if ! grep -q "include \"stdgates.inc\";" "$qasm_file"; then
+                echo "  WARNING: Missing stdgates include"
+              fi
+            fi
+          done
+          echo ""
+          echo "Circuit validation complete with $errors warnings"
