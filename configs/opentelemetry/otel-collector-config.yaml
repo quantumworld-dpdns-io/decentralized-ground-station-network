@@ -3,8 +3,15 @@ receivers:
     protocols:
       grpc:
         endpoint: 0.0.0.0:4317
+        max_recv_msg_size_mib: 16
+        max_concurrent_streams: 100
       http:
         endpoint: 0.0.0.0:4318
+        cors:
+          allowed_origins:
+            - "http://localhost:*"
+            - "http://grafana:*"
+          max_age: 7200
 
   hostmetrics:
     collection_interval: 30s
@@ -26,11 +33,47 @@ receivers:
           metrics_path: /metrics
           static_configs:
             - targets: ["backend:9090"]
+              labels:
+                service: backend
+        - job_name: "dgsn-crypto-kernel"
+          scrape_interval: 15s
+          metrics_path: /metrics
+          static_configs:
+            - targets: ["crypto-kernel:50050"]
+              labels:
+                service: crypto-kernel
+        - job_name: "dgsn-quantum-engine"
+          scrape_interval: 30s
+          metrics_path: /metrics
+          static_configs:
+            - targets: ["quantum-engine:50051"]
+              labels:
+                service: quantum-engine
+        - job_name: "dgsn-signal"
+          scrape_interval: 15s
+          metrics_path: /metrics
+          static_configs:
+            - targets: ["signal-processing:50052"]
+              labels:
+                service: signal-processing
+        - job_name: "dgsn-node"
+          scrape_interval: 30s
+          static_configs:
+            - targets: ["node-exporter:9100"]
 
   jaeger:
     protocols:
       grpc:
         endpoint: 0.0.0.0:14250
+      thrift_http:
+        endpoint: 0.0.0.0:14268
+      thrift_compact:
+        endpoint: 0.0.0.0:6831
+      thrift_binary:
+        endpoint: 0.0.0.0:6832
+
+  zipkin:
+    endpoint: 0.0.0.0:9411
 
 processors:
   batch:
@@ -40,8 +83,8 @@ processors:
 
   memory_limiter:
     check_interval: 5s
-    limit_mib: 512
-    spike_limit_mib: 128
+    limit_mib: 1024
+    spike_limit_mib: 256
 
   attributes:
     actions:
@@ -51,10 +94,14 @@ processors:
       - key: dgsn.version
         value: 0.1.0
         action: upsert
+      - key: dgsn.cluster
+        value: dgsn-production
+        action: upsert
 
   resourcedetection:
     detectors: [ec2, gcp, azure, system]
     timeout: 10s
+    override: false
 
   filter:
     error_mode: ignore
@@ -73,24 +120,79 @@ processors:
         - k8s.namespace.name
         - k8s.deployment.name
         - k8s.container.name
+        - k8s.pod.uid
+      labels:
+        - app
+        - component
+
+  tail_sampling:
+    decision_wait: 30s
+    num_traces: 10000
+    expected_new_traces_per_sec: 100
+    policies:
+      - name: error-sampling
+        type: status_code
+        config:
+          status_code: ERROR
+          min_number_of_spans: 1
+      - name: slow-sampling
+        type: latency
+        config:
+          threshold_ms: 500
+      - name: probabilistic-sampling
+        type: probabilistic
+        config:
+          sampling_percentage: 10
+
+  span:
+    name: "dgsn-processor"
+    from_attributes: ["service", "component"]
+
+  transform:
+    trace_statements:
+      - context: span
+        statements:
+          - set(status.code, 1) where attributes["http.status_code"] >= 400
+          - set(attributes["processed_by"], "otel-collector")
 
 exporters:
   otlp:
     endpoint: tempo:4317
     tls:
       insecure: true
+    sending_queue:
+      queue_size: 1000
+    retry_on_failure:
+      enabled: true
+      max_elapsed_time: 60s
+
+  otlp/traces:
+    endpoint: tempo:4317
+    tls:
+      insecure: true
+    sending_queue:
+      queue_size: 5000
+    retry_on_failure:
+      enabled: true
+      max_elapsed_time: 120s
 
   prometheus:
     endpoint: 0.0.0.0:8889
     namespace: dgsn
     const_labels:
       service: dgsn-otel-collector
+    resource_to_telemetry_conversion:
+      enabled: true
 
   loki:
     endpoint: http://loki:3100/loki/api/v1/push
     tls:
       insecure: true
     format: json
+    default_labels_enabled:
+      - service
+      - component
+      - k8s.namespace.name
 
   debug:
     verbosity: detailed
@@ -100,18 +202,18 @@ exporters:
 service:
   pipelines:
     traces:
-      receivers: [otlp, jaeger]
-      processors: [memory_limiter, batch, resourcedetection, k8sattributes, attributes, filter]
-      exporters: [otlp, debug]
+      receivers: [otlp, jaeger, zipkin]
+      processors: [memory_limiter, batch, resourcedetection, k8sattributes, attributes, filter, tail_sampling, span, transform]
+      exporters: [otlp/traces, debug]
 
     metrics:
       receivers: [otlp, hostmetrics, prometheus]
-      processors: [memory_limiter, batch, attributes]
+      processors: [memory_limiter, batch, resourcedetection, k8sattributes, attributes]
       exporters: [prometheus, debug]
 
     logs:
       receivers: [otlp]
-      processors: [memory_limiter, batch, attributes, filter]
+      processors: [memory_limiter, batch, resourcedetection, k8sattributes, attributes, filter]
       exporters: [loki, debug]
 
   telemetry:
@@ -119,3 +221,5 @@ service:
       level: info
     metrics:
       address: 0.0.0.0:8888
+    traces:
+      propagators: [tracecontext, baggage, b3]
