@@ -1,71 +1,106 @@
-{{- if .Values.otelCollector.enabled }}
-apiVersion: apps/v1
-kind: Deployment
+{{- if .Values.otel.enabled }}
+apiVersion: opentelemetry.io/v1alpha1
+kind: OpenTelemetryCollector
 metadata:
-  name: {{ include "dgsn-infra.fullname" . }}-otel-collector
+  name: {{ include "dgsn-infra.fullname" . }}-otel
   labels:
     {{- include "dgsn-infra.labels" . | nindent 4 }}
-    app.kubernetes.io/component: otel-collector
 spec:
-  replicas: 2
-  selector:
-    matchLabels:
-      {{- include "dgsn-infra.labels" . | nindent 6 }}
-      app.kubernetes.io/component: otel-collector
-  template:
-    metadata:
-      labels:
-        {{- include "dgsn-infra.labels" . | nindent 8 }}
-        app.kubernetes.io/component: otel-collector
-    spec:
-      containers:
-        - name: otel-collector
-          image: "{{ .Values.otelCollector.image.repository }}:{{ .Values.otelCollector.image.tag }}"
-          args:
-            - --config=/etc/otel/config.yaml
-          ports:
-            - containerPort: 4317
-              name: otlp-grpc
-            - containerPort: 4318
-              name: otlp-http
-            - containerPort: 8889
-              name: metrics
-          volumeMounts:
-            - name: config
-              mountPath: /etc/otel
-          resources:
-            {{- toYaml .Values.otelCollector.resources | nindent 12 }}
-      volumes:
-        - name: config
-          configMap:
-            name: {{ include "dgsn-infra.fullname" . }}-otel-collector
+  mode: daemonset
+  image: otel/opentelemetry-collector-contrib:latest
+  serviceAccount: {{ include "dgsn-infra.fullname" . }}-otel
+  config: |
+    receivers:
+      otlp:
+        protocols:
+          grpc:
+            endpoint: 0.0.0.0:4317
+          http:
+            endpoint: 0.0.0.0:4318
+      prometheus:
+        config:
+          scrape_configs:
+            - job_name: otel-collector
+              scrape_interval: 30s
+              static_configs:
+                - targets: ["0.0.0.0:8888"]
+      kubeletstats:
+        collection_interval: 20s
+        endpoint: "https://${env:K8S_NODE_NAME}:10250"
+        insecure_skip_verify: true
+      k8s_cluster:
+        collection_interval: 10s
+
+    processors:
+      batch:
+      memory_limiter:
+        limit_mib: 1536
+        spike_limit_mib: 512
+        check_interval: 5s
+      resourcedetection:
+        detectors: [env, system, gcp, eks]
+        timeout: 5s
+        override: false
+      k8sattributes:
+        extract:
+          metadata:
+            - k8s.namespace.name
+            - k8s.node.name
+            - k8s.pod.name
+            - k8s.deployment.name
+
+    exporters:
+      prometheus:
+        endpoint: "0.0.0.0:9464"
+      logging:
+        loglevel: info
+      otlphttp:
+        endpoint: "http://tempo.monitoring:3200"
+        tls:
+          insecure: true
+      loki:
+        endpoint: "http://loki.monitoring:3100/loki/api/v1/push"
+
+    service:
+      pipelines:
+        traces:
+          receivers: [otlp]
+          processors: [memory_limiter, k8sattributes, resourcedetection, batch]
+          exporters: [otlphttp, logging]
+        metrics:
+          receivers: [otlp, prometheus, kubeletstats, k8s_cluster]
+          processors: [memory_limiter, k8sattributes, resourcedetection, batch]
+          exporters: [prometheus, logging]
+        logs:
+          receivers: [otlp]
+          processors: [memory_limiter, k8sattributes, resourcedetection, batch]
+          exporters: [loki, logging]
 ---
-apiVersion: v1
-kind: Service
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
 metadata:
-  name: {{ include "dgsn-infra.fullname" . }}-otel-collector
-  labels:
-    {{- include "dgsn-infra.labels" . | nindent 4 }}
-    app.kubernetes.io/component: otel-collector
-spec:
-  ports:
-    - port: 4317
-      name: otlp-grpc
-    - port: 4318
-      name: otlp-http
-    - port: 8889
-      name: metrics
-  selector:
-    {{- include "dgsn-infra.labels" . | nindent 4 }}
-    app.kubernetes.io/component: otel-collector
+  name: {{ include "dgsn-infra.fullname" . }}-otel
+rules:
+  - apiGroups: [""]
+    resources: ["pods", "nodes", "services", "endpoints", "namespaces", "events"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["apps"]
+    resources: ["replicasets", "deployments", "statefulsets", "daemonsets"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["extensions"]
+    resources: ["replicasets"]
+    verbs: ["get", "list", "watch"]
 ---
-apiVersion: v1
-kind: ConfigMap
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
 metadata:
-  name: {{ include "dgsn-infra.fullname" . }}-otel-collector
-  labels:
-    {{- include "dgsn-infra.labels" . | nindent 4 }}
-data:
-  config.yaml: |
-    {{- toYaml .Values.otelCollector.config | nindent 4 }}
+  name: {{ include "dgsn-infra.fullname" . }}-otel
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ include "dgsn-infra.fullname" . }}-otel
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "dgsn-infra.fullname" . }}-otel
+    namespace: {{ .Release.Namespace }}
 {{- end }}
