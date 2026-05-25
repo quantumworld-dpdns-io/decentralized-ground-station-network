@@ -1,0 +1,23 @@
+[project]
+name = "dgsn-quantum-engine"
+version = "0.1.0"
+description = "Quantum computing engine for DGSN ground station optimization"
+requires-python = ">=3.12"
+dependencies = [
+    "qiskit>=1.0.0",
+    "qiskit-aer>=0.14.0",
+    "qiskit-ibm-runtime>=0.22.0",
+    "numpy>=1.26.0",
+    "scipy>=1.13.0",
+    "pennylane>=0.36.0",
+]
+
+[project.optional-dependencies]
+cudaq = ["cuda-quantum>=0.8.0"]
+ml = ["torch>=2.3.0", "torchquantum>=0.1.0"]
+dev = ["pytest>=8.0.0", "pytest-benchmark>=4.0.0", "black", "ruff"]
+notebook = ["jupyter", "matplotlib", "ipywidgets"]
+
+[build-system]
+requires = ["setuptools>=69.0.0"]
+build-backend = "setuptools.build_meta"
