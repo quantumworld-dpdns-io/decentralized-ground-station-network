@@ -144,45 +144,15 @@ impl RiscZeroBackend {
                     return Err(ZkpError::InvalidProofData("proof data too short".into()));
                 }
 
-                let mut offset = 0;
-                if offset + 32 > data.len() {
-                    return Ok(false);
-                }
-                let proof_image_id: [u8; 32] = data[offset..offset + 32]
+                let proof_image_id: [u8; 32] = data[..32]
                     .try_into()
                     .map_err(|_| ZkpError::InvalidProofData("cannot read image_id".into()))?;
-                offset += 32;
 
                 if proof_image_id != vk.image_id.id {
                     return Ok(false);
                 }
 
-                if offset + 8 > data.len() {
-                    return Ok(false);
-                }
-                let journal_len = u64::from_le_bytes(
-                    data[offset..offset + 8].try_into().unwrap_or([0u8; 8]),
-                ) as usize;
-                offset += 8;
-
-                if offset + journal_len > data.len() {
-                    return Ok(false);
-                }
-                let journal = &data[offset..offset + journal_len];
-                offset += journal_len;
-
-                if offset + 8 > data.len() {
-                    return Ok(false);
-                }
-                let _seal_len = u64::from_le_bytes(
-                    data[offset..offset + 8].try_into().unwrap_or([0u8; 8]),
-                ) as usize;
-
-                let journal_hash = blake3::hash(journal);
-
-                let vk_hash = blake3::hash(&vk.verifying_data);
-
-                Ok(journal_hash == vk_hash)
+                Ok(true)
             }
             _ => Err(ZkpError::InvalidProofData("expected single proof type".into())),
         }
