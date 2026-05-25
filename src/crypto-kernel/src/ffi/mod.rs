@@ -275,7 +275,7 @@ mod tests {
     fn test_dgsn_sign_verify_roundtrip() {
         let mut pk = [0u8; 1952];
         let mut pk_len = pk.len();
-        let mut sk = [0u8; 4000];
+        let mut sk = [0u8; 4032];
         let mut sk_len = sk.len();
 
         let ret = unsafe {
