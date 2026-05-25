@@ -1,0 +1,70 @@
+replicaCount: 2
+
+image:
+  repository: ghcr.io/decentralized-ground-station-network/frontend
+  tag: latest
+  pullPolicy: Always
+
+serviceAccount:
+  create: true
+  name: dgsn-frontend
+
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 1001
+  fsGroup: 1001
+
+securityContext:
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop: [ALL]
+  readOnlyRootFilesystem: true
+
+service:
+  type: ClusterIP
+  port: 3000
+  metricsPort: 9091
+
+ingress:
+  enabled: true
+  className: nginx
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+  hosts:
+    - host: app.dgsn.io
+      paths:
+        - path: /
+          pathType: Prefix
+  tls:
+    - hosts:
+        - app.dgsn.io
+      secretName: dgsn-app-tls
+
+resources:
+  limits:
+    cpu: 1
+    memory: 1Gi
+  requests:
+    cpu: 200m
+    memory: 256Mi
+
+config:
+  environment: production
+  apiUrl: https://api.dgsn.io
+  grpcUrl: grpc://api.dgsn.io:9090
+  wsUrl: wss://api.dgsn.io/ws
+  sentryDsn: ""
+  posthogKey: ""
+  featureFlags:
+    quantumDashboard: true
+    signalAnalysis: true
+    marketplace: true
+    aiAgents: true
+    darkMode: true
+
+autoscaling:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 10
+  targetCPUUtilizationPercentage: 70

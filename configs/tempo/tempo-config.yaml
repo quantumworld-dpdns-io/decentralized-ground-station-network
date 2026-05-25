@@ -1,0 +1,104 @@
+server:
+  http_listen_port: 3200
+  grpc_listen_port: 9096
+  log_level: info
+
+distributor:
+  receivers:
+    otlp:
+      protocols:
+        grpc:
+          endpoint: 0.0.0.0:4317
+        http:
+          endpoint: 0.0.0.0:4318
+    jaeger:
+      protocols:
+        grpc:
+          endpoint: 0.0.0.0:14250
+        thrift_http:
+          endpoint: 0.0.0.0:14268
+    zipkin:
+      endpoint: 0.0.0.0:9411
+
+ingester:
+  lifecycler:
+    address: 0.0.0.0
+    ring:
+      kvstore:
+        store: inmemory
+      replication_factor: 1
+  max_block_duration: 30m
+  max_block_bytes: 1073741824
+  trace_idle_period: 10s
+  flush_check_period: 30s
+
+compactor:
+  compaction:
+    block_retention: 336h
+    compacted_block_retention: 1h
+    max_compaction_objects: 1000000
+    max_block_bytes: 107374182400
+
+storage:
+  trace:
+    backend: local
+    local:
+      path: /tmp/tempo/blocks
+    wal:
+      path: /tmp/tempo/wal
+    block:
+      blobs_on_wal_storage: true
+    pool:
+      max_workers: 100
+      queue_depth: 10000
+
+querier:
+  max_concurrent_queries: 20
+  frontend_worker:
+    frontend_address: localhost:3200
+    grpc_client_config:
+      max_recv_msg_size: 104857600
+
+query_frontend:
+  max_outstanding_per_tenant: 2000
+  search:
+    max_duration: 168h
+    max_spans_per_span_set: 100
+    tolerate_failed_blocks: 10
+    concurrent_jobs: 1000
+
+search_tags:
+  - service
+  - component
+  - dgsn.operation
+  - dgsn.environment
+  - http.method
+  - http.status_code
+  - rpc.method
+  - rpc.service
+
+metrics_generator:
+  registry:
+    external_labels:
+      cluster: dgsn-production
+  storage:
+    path: /tmp/tempo/generator
+    remote_write:
+      - url: http://prometheus:9090/api/v1/write
+        send_exemplars: true
+  processor:
+    service_graphs:
+      dimensions:
+        - service
+        - component
+    span_metrics:
+      dimensions:
+        - service
+        - component
+        - dgsn.operation
+
+overrides:
+  max_bytes_per_trace: 10485760
+  max_search_bytes_per_trap: 1073741824
+  ingestion_rate_limit: 15000
+  ingestion_burst_size: 30000
