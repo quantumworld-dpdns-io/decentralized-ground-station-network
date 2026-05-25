@@ -1,0 +1,36 @@
+mcp:
+  servers:
+    ground-station:
+      command: python
+      args: ["-m", "src.agents.mcp-servers.ground-station.server"]
+      transport: stdio
+      timeout: 30
+      auth:
+        type: none
+    quantum:
+      command: python
+      args: ["-m", "src.agents.mcp-servers.quantum.server"]
+      transport: stdio
+      timeout: 60
+      auth:
+        type: none
+    signal:
+      command: python
+      args: ["-m", "src.agents.mcp-servers.signal.server"]
+      transport: stdio
+      timeout: 120
+      auth:
+        type: none
+    security:
+      command: python
+      args: ["-m", "src.agents.mcp-servers.security.server"]
+      transport: stdio
+      timeout: 30
+      auth:
+        type: none
+
+  global:
+    max_retries: 3
+    retry_delay: 1.0
+    default_timeout: 30
+    log_level: INFO
