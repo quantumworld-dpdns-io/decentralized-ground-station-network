@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/quantumworld-dpdns-io/dgsn/internal/middleware"
 	"github.com/quantumworld-dpdns-io/dgsn/internal/receipts"
 )
 
@@ -288,5 +289,3 @@ func (h *ReceiptHandler) GetChain(w http.ResponseWriter, r *http.Request) {
 		"length":     len(chain),
 	})
 }
-
-import "github.com/quantumworld-dpdns-io/dgsn/internal/middleware"

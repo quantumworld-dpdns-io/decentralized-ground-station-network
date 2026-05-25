@@ -1,4 +1,4 @@
-use ser::de::DeserializeOwned;
+use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use std::fmt::Debug;
 
