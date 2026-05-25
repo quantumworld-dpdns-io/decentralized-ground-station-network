@@ -28,7 +28,7 @@ jobs:
       - uses: julia-actions/setup-julia@v2
         with:
           version: ${{ env.JULIA_VERSION }}
-      - uses: julia-actions/cache@v2
+      - uses: julia-actions/cache@v3
       - name: Instantiate package
         run: julia -e 'using Pkg; Pkg.activate("."); Pkg.instantiate()'
       - name: Build sysimage with PackageCompiler
