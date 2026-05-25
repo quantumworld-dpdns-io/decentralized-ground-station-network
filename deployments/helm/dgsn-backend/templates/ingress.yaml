@@ -1,20 +1,21 @@
 {{- if .Values.ingress.enabled }}
+{{- $fullName := include "dgsn-backend.fullname" . -}}
+{{- $svcPort := .Values.service.port -}}
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
-  name: {{ include "dgsn-backend.fullname" . }}
+  name: {{ $fullName }}
   labels:
     {{- include "dgsn-backend.labels" . | nindent 4 }}
   annotations:
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/backend-protocol: "HTTP"
     {{- with .Values.ingress.annotations }}
     {{- toYaml . | nindent 4 }}
     {{- end }}
-    nginx.ingress.kubernetes.io/ssl-ciphers: "TLS_AES_256_GCM_SHA384:TLS_CHACHA20_POLY1305_SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384"
-    nginx.ingress.kubernetes.io/ssl-protocols: "TLSv1.3"
-    nginx.ingress.kubernetes.io/server-snippet: |
-      ssl_ecdh_curve secp384r1:X25519MLKEM768:X25519Kyber768Draft00;
 spec:
-  ingressClassName: {{ .Values.ingress.className }}
+  {{- if .Values.ingress.tls }}
   tls:
     {{- range .Values.ingress.tls }}
     - hosts:
@@ -23,6 +24,7 @@ spec:
         {{- end }}
       secretName: {{ .secretName }}
     {{- end }}
+  {{- end }}
   rules:
     {{- range .Values.ingress.hosts }}
     - host: {{ .host | quote }}
@@ -33,9 +35,9 @@ spec:
             pathType: {{ .pathType }}
             backend:
               service:
-                name: {{ include "dgsn-backend.fullname" $ }}
+                name: {{ $fullName }}
                 port:
-                  name: {{ .servicePort }}
+                  number: {{ $svcPort }}
           {{- end }}
     {{- end }}
 {{- end }}
