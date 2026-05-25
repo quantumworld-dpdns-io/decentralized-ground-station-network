@@ -170,7 +170,7 @@ impl MerkleTree {
     }
 
     pub fn iter_leaves(&self) -> impl Iterator<Item = &Vec<u8>> {
-        self.nodes[..self.leaf_count].iter()
+        self.leaves.iter()
     }
 
     fn hash_leaf(data: &[u8]) -> Hash {
