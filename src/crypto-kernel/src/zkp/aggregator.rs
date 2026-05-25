@@ -267,9 +267,9 @@ mod tests {
     fn test_recursive_tampered() {
         let inner = make_dummy_proof(0);
         let mut recursive = ProofAggregator::compose_recursive(inner, ProofSystem::RiscZero).unwrap();
-        if let ProofType::Recursive(ref mut outer_data, _) = recursive.outer_proof.proof_type {
-            if !outer_data.is_empty() {
-                outer_data[0] ^= 0xFF;
+        if let ProofType::Recursive(_ref mut _outer_data, ref mut claimed) = recursive.outer_proof.proof_type {
+            if !claimed.is_empty() {
+                claimed[0] ^= 0xFF;
             }
         }
         assert!(!ProofAggregator::verify_recursive(&recursive).unwrap());
