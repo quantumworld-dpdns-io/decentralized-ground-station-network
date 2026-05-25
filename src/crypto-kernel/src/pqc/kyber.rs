@@ -348,7 +348,7 @@ fn kyber_internal_keypair(variant: KyberVariant) -> crate::Result<(Vec<u8>, Vec<
     let mut t = vec![vec![0i16; 256]; k];
     for i in 0..k {
         for j in 0..k {
-            let prod = poly_mul(&matrix[i][j], &nt_s[j]);
+            let prod = ntt_mul(&matrix[i][j], &nt_s[j]);
             for idx in 0..256 {
                 t[i][idx] = mod_reduce(t[i][idx] + prod[idx]);
             }
