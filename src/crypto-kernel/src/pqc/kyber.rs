@@ -455,8 +455,8 @@ fn kyber_internal_encapsulate(public_key: &[u8]) -> crate::Result<(Vec<u8>, Vec<
     }
 
     let mut e1_coeffs = Vec::with_capacity(k);
-    for i in 0..k {
-        let nonce = (k + i) as u8;
+    for _i in 0..k {
+        let nonce = (k + _i) as u8;
         let noise_seed = prf(&seed, nonce, variant.eta2() * 2 * 32);
         let noise = cbd(&noise_seed, variant.eta2());
         e1_coeffs.push(noise);
