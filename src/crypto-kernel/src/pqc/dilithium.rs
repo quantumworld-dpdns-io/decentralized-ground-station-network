@@ -17,10 +17,7 @@ const DILITHIUM5_SIG_SIZE: usize = 4627;
 
 const Q: i32 = 8380417;
 const D: usize = 13;
-const GAMMA1: i32 = 1 << 17;
 const _GAMMA2: i32 = (Q - 1) / 88;
-const BETA: usize = 78;
-const _OMEGA: usize = 55;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum DilithiumVariant {
@@ -86,14 +83,6 @@ impl DilithiumVariant {
         }
     }
 
-    fn _tau(&self) -> usize {
-        match self {
-            DilithiumVariant::Dilithium2 => 39,
-            DilithiumVariant::Dilithium3 => 49,
-            DilithiumVariant::Dilithium5 => 60,
-        }
-    }
-
     fn omega(&self) -> usize {
         match self {
             DilithiumVariant::Dilithium2 => 80,
@@ -107,6 +96,7 @@ impl DilithiumVariant {
 #[zeroize(drop)]
 pub struct DilithiumPublicKey {
     pub raw: Vec<u8>,
+    #[zeroize(skip)]
     pub variant: DilithiumVariant,
 }
 
@@ -114,6 +104,7 @@ pub struct DilithiumPublicKey {
 #[zeroize(drop)]
 pub struct DilithiumSecretKey {
     pub raw: Vec<u8>,
+    #[zeroize(skip)]
     pub variant: DilithiumVariant,
 }
 
@@ -121,22 +112,13 @@ pub struct DilithiumSecretKey {
 #[zeroize(drop)]
 pub struct DilithiumSignature {
     pub raw: Vec<u8>,
+    #[zeroize(skip)]
     pub variant: DilithiumVariant,
 }
 
 fn mod_reduce(a: i32) -> i32 {
     let mut r = a % Q;
     if r < 0 {
-        r += Q;
-    }
-    r
-}
-
-fn _mod_plus_minus(a: i32) -> i32 {
-    let mut r = a % Q;
-    if r > Q / 2 {
-        r -= Q;
-    } else if r < -Q / 2 {
         r += Q;
     }
     r
@@ -217,7 +199,7 @@ fn shake256(data: &[u8], output_len: usize) -> Vec<u8> {
     Update::update(&mut hasher, data);
     let mut reader = hasher.finalize_xof();
     let mut output = vec![0u8; output_len];
-    XofReader::squeeze(&mut reader, &mut output);
+    reader.squeeze(&mut output);
     output
 }
 
