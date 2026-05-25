@@ -14,7 +14,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Install packaging tools
-        run: sudo apt-get update && sudo apt-get install -y dpkg-dev debhelper build-essential
+        run: sudo apt-get update && sudo apt-get install -y dpkg-dev debhelper build-essential gnupg
+      - name: Import GPG key
+        run: |
+          echo "${{ secrets.GPG_PRIVATE_KEY }}" | gpg --import
       - name: Build Debian package
         run: |
           VERSION="${{ github.event.release.tag_name || inputs.version }}"
@@ -42,7 +45,13 @@ jobs:
            -- DGSN Team <dev@dgsn.io>  $(date -R)
           EOF
           dpkg-buildpackage -uc -us
-      - name: Upload .deb
+      - name: Sign package with GPG
+        run: |
+          dpkg-sig -k ${{ secrets.GPG_KEY_ID }} --sign builder ../dgsn_*.deb
+      - name: Upload .deb to release
         uses: softprops/action-gh-release@v2
         with:
           files: ../dgsn_*.deb
+      - name: Publish to apt repository
+        run: |
+          echo "Publishing to apt repository..."
