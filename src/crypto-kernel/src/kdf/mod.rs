@@ -12,6 +12,7 @@ const MAX_OUTPUT_LENGTH: usize = 1024;
 pub struct Kdf {
     salt: Vec<u8>,
     info: Vec<u8>,
+    #[zeroize(skip)]
     algorithm: KdfAlgorithm,
 }
 
