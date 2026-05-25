@@ -100,8 +100,21 @@ impl WasmCrypto {
         circuit_data: &[u8],
         public_inputs: JsValue,
     ) -> Result<JsValue, JsValue> {
-        let inputs: Vec<Vec<u8>> = serde_wasm_bindgen::from_value(public_inputs)
-            .map_err(|e| JsValue::from_str(&e.to_string()))?;
+        let inputs_array: js_sys::Array = public_inputs.dyn_into()
+            .map_err(|_| JsValue::from_str("public_inputs must be an array"))?;
+        let mut inputs = Vec::new();
+        for i in 0..inputs_array.length() {
+            let val = inputs_array.get(i);
+            if let Some(arr) = val.dyn_ref::<js_sys::Array>() {
+                let mut inner = Vec::with_capacity(arr.length() as usize);
+                for j in 0..arr.length() {
+                    let byte_val = arr.get(j).as_f64()
+                        .ok_or_else(|| JsValue::from_str("invalid byte value"))? as u8;
+                    inner.push(byte_val);
+                }
+                inputs.push(inner);
+            }
+        }
         let proof = ZkpProof {
             proof_type: ProofType::Groth16,
             proof_data: circuit_data.to_vec(),
