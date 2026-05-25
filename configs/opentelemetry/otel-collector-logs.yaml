@@ -1,0 +1,140 @@
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+      http:
+        endpoint: 0.0.0.0:4318
+
+  filelog:
+    include:
+      - /var/log/dgsn/*.log
+      - /var/log/dgsn/*.json
+    include_file_name: false
+    include_file_path_resolved: true
+    start_at: end
+    poll_interval: 500ms
+    operators:
+      - type: json_parser
+        timestamp:
+          parse_from: attributes.timestamp
+          layout: "%Y-%m-%dT%H:%M:%S.%fZ"
+      - type: filter
+        expr: 'body != ""'
+
+  syslog:
+    protocol: rfc5424
+    listen_address: 0.0.0.0:54526
+    operators:
+      - type: regex_parser
+        regex: '<(?P<priority>\d+)>(?P<version>\d+)\s+(?P<timestamp>\S+)\s+(?P<hostname>\S+)\s+(?P<appname>\S+)\s+(?P<procid>\S+)\s+(?P<msgid>\S+)\s+(?P<structured_data>\S+)\s+(?P<message>.*)'
+
+  tcplog:
+    listen_address: 0.0.0.0:54527
+    operators:
+      - type: json_parser
+        timestamp:
+          parse_from: attributes.timestamp
+          layout: "%Y-%m-%dT%H:%M:%S.%fZ"
+
+processors:
+  batch:
+    timeout: 5s
+    send_batch_size: 1000
+    send_batch_max_size: 2000
+
+  memory_limiter:
+    check_interval: 5s
+    limit_mib: 512
+    spike_limit_mib: 128
+
+  attributes:
+    actions:
+      - key: dgsn.environment
+        value: production
+        action: upsert
+      - key: dgsn.log_pipeline
+        value: logs-only
+        action: upsert
+
+  resourcedetection:
+    detectors: [ec2, gcp, azure, system]
+    timeout: 10s
+
+  k8sattributes:
+    auth_type: serviceAccount
+    passthrough: false
+    extract:
+      metadata:
+        - k8s.pod.name
+        - k8s.namespace.name
+        - k8s.deployment.name
+        - k8s.container.name
+
+  filter:
+    error_mode: ignore
+    logs:
+      log_record:
+        - 'attributes["severity"] != "DEBUG"'
+        - 'body not contains "healthcheck"'
+        - 'body not contains "heartbeat"'
+
+  transform:
+    log_statements:
+      - context: log
+        statements:
+          - set(severity_text, "INFO") where severity_text == nil
+          - set(attributes["dgsn.log_source"], "filelog") where attributes["log.file.name"] != nil
+
+  logstransform:
+    - include: ".*"
+      match_type: regexp
+      operations:
+        - action: add
+          new_name: dgsn.processed_log
+          value: "true"
+
+  redaction:
+    block:
+      - "(?i)(password|secret|token|api_key|private_key)"
+    mask:
+      - "(?i)(authorization:\\\\s*)(\\\\S+)"
+    replacement: "[REDACTED]"
+
+exporters:
+  loki:
+    endpoint: http://loki:3100/loki/api/v1/push
+    tls:
+      insecure: true
+    format: json
+    default_labels_enabled:
+      - service
+      - component
+      - k8s.namespace.name
+      - k8s.pod.name
+    labels:
+      severity_text:
+        from: severity_text
+        allowed_values:
+          - INFO
+          - WARN
+          - ERROR
+          - FATAL
+
+  debug:
+    verbosity: basic
+    sampling_initial: 1
+    sampling_thereafter: 100
+
+service:
+  pipelines:
+    logs:
+      receivers: [otlp, filelog, syslog, tcplog]
+      processors: [memory_limiter, batch, resourcedetection, k8sattributes, attributes, filter, transform, logstransform, redaction]
+      exporters: [loki, debug]
+
+  telemetry:
+    logs:
+      level: info
+    metrics:
+      address: 0.0.0.0:8888
