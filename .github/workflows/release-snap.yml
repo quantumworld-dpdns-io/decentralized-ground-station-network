@@ -53,7 +53,12 @@ jobs:
                 - openssl
           EOF
           snapcraft
-      - name: Upload snap
+      - name: Upload snap to release
         uses: softprops/action-gh-release@v2
         with:
           files: dgsn_*.snap
+      - name: Upload to Snap Store
+        run: |
+          snapcraft upload --release=stable dgsn_*.snap
+        env:
+          SNAPCRAFT_STORE_CREDENTIALS: ${{ secrets.SNAPCRAFT_STORE_TOKEN }}
