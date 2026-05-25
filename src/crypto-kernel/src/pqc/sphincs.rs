@@ -334,45 +334,6 @@ fn sphincs_internal_verify(message: &[u8], signature: &[u8], public_key: &[u8]) 
     let sig_hash = &signature[1..1 + sig_hash_len];
     Ok(sig_hash == &expected[..sig_hash_len])
 }
-    signature.extend_from_slice(&fors_sig);
-
-    for i in 0.._SPX_D {
-        let tree_addr = {
-            let mut a = vec![0u8; 32];
-            let i_bytes = (i as u32).to_be_bytes();
-            a[..4].copy_from_slice(&i_bytes);
-            a
-        };
-
-        let mut wots_sig = Vec::new();
-        for _ in 0..wots_len {
-            let mut s = Vec::new();
-            s.extend_from_slice(pk_seed);
-            s.extend_from_slice(&tree_addr);
-            wots_sig.extend_from_slice(&shake256_xof(&s, n));
-        }
-        signature.extend_from_slice(&wots_sig);
-
-        let mut auth_path = Vec::new();
-        for j in 0..SPX_TREE_HEIGHT {
-            let mut sibling_input = Vec::new();
-            sibling_input.extend_from_slice(pk_seed);
-            sibling_input.extend_from_slice(&tree_addr);
-            sibling_input.extend_from_slice(&j.to_be_bytes());
-            auth_path.extend_from_slice(&shake256_xof(&sibling_input, n));
-        }
-        signature.extend_from_slice(&auth_path);
-    }
-
-    if signature.len() > sig_size {
-        signature.truncate(sig_size);
-    } else {
-        let pad = sig_size - signature.len();
-        signature.extend(std::iter::repeat(0u8).take(pad));
-    }
-
-    Ok(signature)
-}
 
 pub fn sign(message: &[u8], secret_key: &[u8]) -> crate::Result<Vec<u8>> {
     sphincs_internal_sign(message, secret_key)
