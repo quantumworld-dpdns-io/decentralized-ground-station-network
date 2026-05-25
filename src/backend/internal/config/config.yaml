@@ -1,0 +1,52 @@
+version: "0.1.0"
+env: "production"
+log_level: "info"
+
+grpc:
+  port: 9090
+  max_recv_msg_size: 4194304
+  max_send_msg_size: 4194304
+  connection_timeout: 120
+
+http:
+  port: 8080
+  allowed_origins:
+    - "*"
+  read_timeout: 30
+  write_timeout: 30
+
+database:
+  driver: "postgres"
+  dsn: "postgres://dgsn:dgsn@postgres:5432/dgsn?sslmode=disable"
+  max_open_cons: 25
+  max_idle_cons: 5
+  max_lifetime: 300
+
+redis:
+  addr: "redis:6379"
+  password: ""
+  db: 0
+  pool_size: 10
+
+otel:
+  service_name: "dgsn-server"
+  otlp_endpoint: "otel-collector:4317"
+  sampling_ratio: 0.1
+  insecure: true
+  export_interval: 10
+
+crypto:
+  kernel_path: "/usr/local/lib/libdgsn_crypto.so"
+  default_algo: "ML-KEM-768"
+  key_size: 256
+
+quantum:
+  engine_endpoint: "quantum-engine:50051"
+  simulator: "aer"
+  max_qubits: 32
+  shots: 1024
+
+signal:
+  processing_endpoint: "signal-processing:50052"
+  sample_rate: 2500000
+  fft_size: 4096
