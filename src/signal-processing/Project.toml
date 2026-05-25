@@ -1,0 +1,16 @@
+name = "DGSN_SignalProcessing"
+uuid = "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+version = "0.1.0"
+
+[deps]
+DSP = "71763654-406c-5db6-bb0b-7ff726a2e8b4"
+FFTW = "7a1cc6ca-52ef-59f5-83cd-3a7055c09341"
+Optim = "42952423-7b18-5e6b-b3e0-8b3b8832e7ce"
+Plots = "91a5bcdd-55d7-5caf-9e0b-520d859cae80"
+Statistics = "10745b16-79ce-11e8-11f9-7d13ad32a3b2"
+DelimitedFiles = "8bb1440f-4735-579b-a4ab-409b98df4dab"
+CUDA = "052768ef-5323-5732-b1bb-66c8b64840ba"
+CUDAKernels = "7c3c8552-3f80-5a13-95a0-9d2d0d0f3d5e"
+
+[extras]
+test = ["Test"]
