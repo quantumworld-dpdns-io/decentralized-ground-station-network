@@ -8,38 +8,57 @@ on:
         description: 'Version to publish'
         required: true
 
-env:
-  WORKING_DIR: src/frontend
-
 jobs:
   npm:
     runs-on: ubuntu-latest
+    if: contains(github.event.release.tag_name, 'npm')
     defaults:
       run:
-        working-directory: ${{ env.WORKING_DIR }}
+        working-directory: packages/frontend
     steps:
       - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-        with:
-          version: 9
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
           registry-url: 'https://registry.npmjs.org'
-      - name: Build
-        run: |
-          pnpm install --frozen-lockfile
-          pnpm build
+      - name: Install dependencies
+        run: npm ci
+      - name: Build frontend package
+        run: npm run build
       - name: Check version
         run: |
           PKG_VERSION=$(node -p "require('./package.json').version")
-          RELEASE_VERSION="${{ github.event.release.tag_name || inputs.version }}"
+          RELEASE_VERSION="${{ github.event.release.tag_name }}"
           RELEASE_VERSION="${RELEASE_VERSION#v}"
           if [ "$PKG_VERSION" != "$RELEASE_VERSION" ]; then
-            echo "Version mismatch: package.json has $PKG_VERSION, release is $RELEASE_VERSION"
+            echo "Version mismatch: $PKG_VERSION vs $RELEASE_VERSION"
             exit 1
           fi
-      - name: Publish to npm
-        run: pnpm publish --no-git-checks
+      - name: Publish frontend to npm
+        run: npm publish --no-git-checks
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+  wasm:
+    runs-on: ubuntu-latest
+    if: contains(github.event.release.tag_name, 'npm')
+    defaults:
+      run:
+        working-directory: packages/wasm
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          registry-url: 'https://registry.npmjs.org'
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - name: Install wasm-pack
+        run: cargo install wasm-pack
+      - name: Build WASM package
+        run: wasm-pack build --target web --out-dir pkg
+      - name: Publish WASM to npm
+        run: npm publish --no-git-checks
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
