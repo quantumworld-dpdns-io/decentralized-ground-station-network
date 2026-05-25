@@ -1,40 +1,25 @@
 apiVersion: v2
 name: dgsn-infra
-description: DGSN Infrastructure - Redis, OpenTelemetry, Prometheus, Grafana, MinIO
+description: DGSN Infrastructure Stack (Redis, MinIO, Prometheus, Grafana, OTel)
 type: application
 version: 0.1.0
-appVersion: "0.1.0"
-icon: https://dgsn.io/icon.svg
-keywords:
-  - dgsn
-  - infrastructure
-  - redis
-  - monitoring
-  - observability
-  - storage
-home: https://dgsn.io
-sources:
-  - https://github.com/decentralized-ground-station-network
-maintainers:
-  - name: DGSN Team
-    email: dev@dgsn.io
+appVersion: "1.0.0"
+
 dependencies:
   - name: redis
-    version: ~19.0
-    repository: https://charts.bitnami.com/bitnami
+    version: "18.x.x"
+    repository: oci://registry-1.docker.io/bitnamicharts
     condition: redis.enabled
-  - name: prometheus
-    version: ~25.0
-    repository: https://prometheus-community.github.io/helm-charts
-    condition: prometheus.enabled
-  - name: grafana
-    version: ~8.0
-    repository: https://grafana.github.io/helm-charts
-    condition: grafana.enabled
   - name: minio
-    version: ~5.0
-    repository: https://charts.min.io/
+    version: "5.x.x"
+    repository: oci://registry-1.docker.io/bitnamicharts
     condition: minio.enabled
-annotations:
-  artifacthub.io/category: infrastructure
-  artifacthub.io/license: MIT
+  - name: kube-prometheus-stack
+    version: "55.x.x"
+    repository: https://prometheus-community.github.io/helm-charts
+    condition: monitoring.enabled
+    alias: prometheus-stack
+  - name: opentelemetry-collector
+    version: "0.x.x"
+    repository: https://open-telemetry.github.io/opentelemetry-helm-charts
+    condition: otel.enabled
