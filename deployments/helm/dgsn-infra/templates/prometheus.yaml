@@ -1,0 +1,72 @@
+{{- if not .Values.prometheus.enabled }}
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "dgsn-infra.fullname" . }}-prometheus
+  labels:
+    {{- include "dgsn-infra.labels" . | nindent 4 }}
+    app.kubernetes.io/component: prometheus
+spec:
+  serviceName: {{ include "dgsn-infra.fullname" . }}-prometheus
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "dgsn-infra.labels" . | nindent 6 }}
+      app.kubernetes.io/component: prometheus
+  template:
+    metadata:
+      labels:
+        {{- include "dgsn-infra.labels" . | nindent 8 }}
+        app.kubernetes.io/component: prometheus
+    spec:
+      containers:
+        - name: prometheus
+          image: prom/prometheus:v2.55.0
+          args:
+            - --config.file=/etc/prometheus/prometheus.yml
+            - --storage.tsdb.path=/prometheus
+            - --storage.tsdb.retention.time=15d
+            - --web.enable-lifecycle
+          ports:
+            - containerPort: 9090
+              name: http
+          volumeMounts:
+            - name: config
+              mountPath: /etc/prometheus
+            - name: data
+              mountPath: /prometheus
+          resources:
+            requests:
+              cpu: 500m
+              memory: 2Gi
+            limits:
+              cpu: 2
+              memory: 8Gi
+      volumes:
+        - name: config
+          configMap:
+            name: {{ include "dgsn-infra.fullname" . }}-prometheus
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 50Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "dgsn-infra.fullname" . }}-prometheus
+  labels:
+    {{- include "dgsn-infra.labels" . | nindent 4 }}
+    app.kubernetes.io/component: prometheus
+spec:
+  ports:
+    - port: 9090
+      name: http
+  selector:
+    {{- include "dgsn-infra.labels" . | nindent 4 }}
+    app.kubernetes.io/component: prometheus
+{{- end }}
