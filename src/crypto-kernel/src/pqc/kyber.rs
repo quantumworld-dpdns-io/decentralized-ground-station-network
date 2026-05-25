@@ -459,7 +459,7 @@ fn kyber_internal_encapsulate(public_key: &[u8]) -> crate::Result<(Vec<u8>, Vec<
             t_i[2 * j + 1] = decompress(((packed >> 12) & 0xFFF) as i16, 12);
         }
         let nt_t = ntt(&t_i);
-        let dot = poly_mul(&nt_t, &nt_r[i]);
+        let dot = ntt_mul(&nt_t, &nt_r[i]);
         for idx in 0..256 { v[idx] = mod_reduce(v[idx] + dot[idx]); }
     }
     let v_inv = inv_ntt(&v);
