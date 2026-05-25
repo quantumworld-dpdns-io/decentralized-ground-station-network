@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"encoding/json"
 	"fmt"
 	"strconv"
 	"strings"
@@ -8,6 +9,7 @@ import (
 
 	"github.com/spf13/cobra"
 	"github.com/quantumworld-dpdns-io/dgsn/internal/scheduling"
+	"github.com/quantumworld-dpdns-io/dgsn/internal/stations"
 )
 
 func (c *CLI) newScheduleCmd() *cobra.Command {
@@ -387,8 +389,3 @@ func parseTime(s string) (time.Time, error) {
 
 	return time.Time{}, fmt.Errorf("unable to parse time: %s", s)
 }
-
-import (
-	"encoding/json"
-	"github.com/quantumworld-dpdns-io/dgsn/internal/stations"
-)
