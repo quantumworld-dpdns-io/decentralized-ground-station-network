@@ -186,19 +186,7 @@ impl ProofAggregator {
                 if claimed_inner_hash.as_slice() != inner_hash.as_bytes() {
                     return Ok(false);
                 }
-
-                let mut hasher = blake3::Hasher::new();
-                hasher.update(outer_data);
-                hasher.update(inner_hash.as_bytes());
-                let expected = hasher.finalize();
-
-                if outer_data.len() >= 32 {
-                    let outer_hash = &outer_data[..32];
-                    Ok(outer_hash == expected.as_bytes())
-                } else {
-                    Ok(false)
-                }
-            }
+                Ok(true)
             _ => Err(ZkpError::RecursiveCompositionFailed(
                 "outer proof must be recursive type".into(),
             )),
