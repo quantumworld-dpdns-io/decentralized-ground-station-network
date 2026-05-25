@@ -8,6 +8,7 @@ const NODE_HASH_PREFIX: u8 = 0x01;
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct MerkleTree {
+    leaves: Vec<Vec<u8>>,
     nodes: Vec<Vec<u8>>,
     leaf_count: usize,
     height: usize,
