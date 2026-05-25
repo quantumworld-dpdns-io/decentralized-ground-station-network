@@ -7,7 +7,10 @@ using Statistics
 export compute_spectrum, compute_spectrogram, compute_power_spectral_density,
        compute_waterfall, compute_cyclic_autocorrelation,
        compute_harmonic_products, find_peaks, compute_snr,
-       compute_phase_noise, window_function, stft
+       compute_phase_noise, window_function, stft,
+       compute_cepstrum, compute_mfcc, compute_spectral_kurtosis,
+       goertzel_algorithm, zoom_fft, compute_cross_spectrum,
+       compute_coherence, compute_autocorrelation
 
 abstract type WindowFunction end
 
@@ -304,12 +307,193 @@ function stft(
     return times, freqs, stft_matrix
 end
 
+function compute_cepstrum(signal::Vector{T}) where {T<:Number}
+    spectrum = fft(signal)
+    log_spectrum = log.(abs.(spectrum) .+ eps())
+    cepstrum = real(ifft(log_spectrum))
+    return cepstrum
+end
+
+function compute_mfcc(signal::Vector{T}, fs::Float64; num_coeffs::Int=13, nfft::Int=256) where {T<:Number}
+    n = length(signal)
+    spectrum = abs.(fft(signal, nfft))
+    freqs = linspace(0, fs / 2, nfft ÷ 2 + 1)
+
+    num_filters = 26
+    mel_low = 0
+    mel_high = 2595 * log10(1 + fs / 1400)
+    mel_points = range(mel_low, mel_high, length=num_filters + 2)
+    hz_points = 700 * (10 .^(mel_points / 2595) .- 1)
+    bin_points = round.(Int, hz_points / fs * nfft) .+ 1
+    bin_points = min.(bin_points, nfft ÷ 2 + 1)
+
+    filterbank = zeros(num_filters, nfft ÷ 2 + 1)
+    for m in 2:(num_filters + 1)
+        l = bin_points[m - 1]
+        c = bin_points[m]
+        r = bin_points[m + 1]
+        for k in l:c
+            filterbank[m - 1, k] = (k - l) / (c - l)
+        end
+        for k in c:r
+            filterbank[m - 1, k] = (r - k) / (r - c)
+        end
+    end
+
+    power_spec = abs2.(spectrum[1:(nfft ÷ 2 + 1)])
+    mel_energy = filterbank * power_spec
+    log_mel_energy = log.(mel_energy .+ eps())
+
+    mfccs = zeros(num_coeffs)
+    for i in 1:num_coeffs
+        for j in 1:num_filters
+            mfccs[i] += log_mel_energy[j] * cos(i * (j - 0.5) * π / num_filters)
+        end
+    end
+
+    return mfccs
+end
+
+function compute_spectral_kurtosis(signal::Vector{T}, fs::Float64; nfft::Int=256, noverlap::Int=128) where {T<:Number}
+    n = length(signal)
+    step = nfft - noverlap
+    nframes = (n - noverlap) ÷ step
+    win = window_function(nfft, HannWindow())
+
+    s2 = zeros(Float64, nfft ÷ 2 + 1)
+    s4 = zeros(Float64, nfft ÷ 2 + 1)
+    count = zeros(Int, nfft ÷ 2 + 1)
+
+    for i in 0:(nframes - 1)
+        start_idx = i * step + 1
+        end_idx = start_idx + nfft - 1
+        if end_idx <= n
+            segment = signal[start_idx:end_idx] .* win
+            spec = abs.(fft(segment, nfft))[1:(nfft ÷ 2 + 1)]
+            s2 .+= spec.^2
+            s4 .+= spec.^4
+            count .+= 1
+        end
+    end
+
+    s2 ./= count
+    s4 ./= count
+    kurtosis = (s4 ./ (s2.^2 .+ eps())) .- 2
+    return fftfreq(nfft, fs)[1:(nfft ÷ 2 + 1)], kurtosis
+end
+
+function goertzel_algorithm(signal::Vector{T}, target_freq::Float64, fs::Float64) where {T<:Number}
+    n = length(signal)
+    k = round(Int, target_freq * n / fs)
+    omega = 2π * k / n
+    coeff = 2 * cos(omega)
+    s0 = 0.0
+    s1 = 0.0
+    s2 = 0.0
+
+    for i in 1:n
+        s0 = real(signal[i]) + coeff * s1 - s2
+        s2 = s1
+        s1 = s0
+    end
+
+    power = s2^2 + s1^2 - coeff * s1 * s2
+    return power
+end
+
+function zoom_fft(signal::Vector{T}, fs::Float64, f_center::Float64, f_span::Float64; nfft::Int=1024) where {T<:Number}
+    n = length(signal)
+    t = (0:n-1) / fs
+    shifted = signal .* exp.(-2π * im * f_center .* t)
+    decimation_factor = max(1, floor(Int, fs / f_span))
+    decimated = shifted[1:decimation_factor:end]
+    spec = abs.(fft(decimated, nfft))
+    freqs = range(f_center - f_span / 2, f_center + f_span / 2, length=nfft ÷ 2 + 1)
+    return freqs, spec[1:(nfft ÷ 2 + 1)]
+end
+
+function compute_cross_spectrum(x::Vector{T}, y::Vector{T}, fs::Float64; nfft::Int=1024) where {T<:Number}
+    X = fft(x, nfft)
+    Y = fft(y, nfft)
+    cross = X .* conj(Y)
+    freqs = fftfreq(nfft, fs)[1:(nfft ÷ 2 + 1)]
+    return freqs, cross[1:(nfft ÷ 2 + 1)]
+end
+
+function compute_coherence(x::Vector{T}, y::Vector{T}, fs::Float64; nfft::Int=256, noverlap::Int=128) where {T<:Number}
+    n = length(x)
+    step = nfft - noverlap
+    nframes = (n - noverlap) ÷ step
+    win = window_function(nfft, HannWindow())
+
+    pxy_sum = zeros(Complex{Float64}, nfft ÷ 2 + 1)
+    pxx_sum = zeros(Float64, nfft ÷ 2 + 1)
+    pyy_sum = zeros(Float64, nfft ÷ 2 + 1)
+
+    for i in 0:(nframes - 1)
+        start_idx = i * step + 1
+        end_idx = start_idx + nfft - 1
+        if end_idx <= n
+            seg_x = x[start_idx:end_idx] .* win
+            seg_y = y[start_idx:end_idx] .* win
+            X = fft(seg_x, nfft)[1:(nfft ÷ 2 + 1)]
+            Y = fft(seg_y, nfft)[1:(nfft ÷ 2 + 1)]
+            pxy_sum .+= X .* conj(Y)
+            pxx_sum .+= abs2.(X)
+            pyy_sum .+= abs2.(Y)
+        end
+    end
+
+    coherence = abs2.(pxy_sum) ./ ((pxx_sum .* pyy_sum) .+ eps())
+    freqs = fftfreq(nfft, fs)[1:(nfft ÷ 2 + 1)]
+    return freqs, coherence
+end
+
+function compute_autocorrelation(signal::Vector{T}; max_lag::Int=-1) where {T<:Number}
+    n = length(signal)
+    if max_lag <= 0 || max_lag >= n
+        max_lag = n - 1
+    end
+    result = zeros(Float64, max_lag + 1)
+    mean_signal = mean(signal)
+    var_signal = var(signal)
+    for lag in 0:max_lag
+        sum_val = 0.0
+        count = 0
+        for i in 1:(n - lag)
+            sum_val += (signal[i] - mean_signal) * (signal[i + lag] - mean_signal)
+            count += 1
+        end
+        result[lag + 1] = sum_val / (count * var_signal + eps())
+    end
+    return 0:max_lag, result
+end
+
 function detrend_signal(signal::Vector{T}) where {T<:Number}
     n = length(signal)
     x = 1.0:n
     coeffs = [sum(real(signal) .* x) / sum(x.^2), sum(imag(signal) .* x) / sum(x.^2)]
     trend = complex.(coeffs[1] * x, coeffs[2] * x)
     return signal - trend
+end
+
+function linspace(start::Float64, stop::Float64, n::Int)
+    return range(start, stop, length=n)
+end
+
+function unwrap(phase::Vector{T}) where {T<:Number}
+    unwrapped = copy(phase)
+    for i in 2:length(unwrapped)
+        diff = unwrapped[i] - unwrapped[i-1]
+        while diff > π
+            diff -= 2π
+        end
+        while diff < -π
+            diff += 2π
+        end
+        unwrapped[i] = unwrapped[i-1] + diff
+    end
+    return unwrapped
 end
 
 end
