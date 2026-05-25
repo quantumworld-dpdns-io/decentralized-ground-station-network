@@ -66,8 +66,8 @@ fn verify_location_proximity(
     let approx_km_per_degree_lat: u64 = 111;
     let approx_km_per_degree_lon: u64 = 85;
 
-    let lat_km: u64 = lat_diff_abs * approx_km_per_lat;
-    let lon_km: u64 = lon_diff_abs * approx_km_per_lon;
+    let lat_km: u64 = lat_diff_abs * approx_km_per_degree_lat;
+    let lon_km: u64 = lon_diff_abs * approx_km_per_degree_lon;
 
     let distance_sq: u64 = lat_km * lat_km + lon_km * lon_km;
     let threshold_sq: u64 = threshold_km * threshold_km;
