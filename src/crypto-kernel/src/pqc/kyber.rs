@@ -169,7 +169,7 @@ fn matrix_vector_mul(matrix: &[Vec<Vec<i16>>], vec_ntt: &[Vec<i16>]) -> Vec<Vec<
     for i in 0..k {
         let mut sum = vec![0i16; 256];
         for j in 0..k {
-            let prod = poly_mul(&matrix[i][j], &vec[j]);
+            let prod = ntt_mul(&matrix[i][j], &vec_ntt[j]);
             for idx in 0..256 {
                 sum[idx] = mod_reduce(sum[idx] + prod[idx]);
             }
