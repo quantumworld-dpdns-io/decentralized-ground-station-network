@@ -1,3 +1,4 @@
+use ser::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use std::fmt::Debug;
 
@@ -10,30 +11,29 @@ pub trait Serializable: Sized {
     fn to_json(&self) -> Result<String, Self::Error>
     where
         Self: Serialize,
+        Self::Error: From<Box<dyn std::error::Error>>,
     {
         serde_json::to_string(self)
-            .map_err(|e| make_error(format!("JSON serialization failed: {}", e)))
+            .map_err(|e| Self::Error::from(Box::new(e) as Box<dyn std::error::Error>))
     }
 
     fn from_json(json: &str) -> Result<Self, Self::Error>
     where
-        Self: Deserialize<'static>,
+        Self: DeserializeOwned,
+        Self::Error: From<Box<dyn std::error::Error>>,
     {
         serde_json::from_str(json)
-            .map_err(|e| make_error(format!("JSON deserialization failed: {}", e)))
+            .map_err(|e| Self::Error::from(Box::new(e) as Box<dyn std::error::Error>))
     }
 
     fn to_json_pretty(&self) -> Result<String, Self::Error>
     where
         Self: Serialize,
+        Self::Error: From<Box<dyn std::error::Error>>,
     {
         serde_json::to_string_pretty(self)
-            .map_err(|e| make_error(format!("JSON pretty serialization failed: {}", e)))
+            .map_err(|e| Self::Error::from(Box::new(e) as Box<dyn std::error::Error>))
     }
-}
-
-fn make_error(msg: String) -> Box<dyn std::error::Error> {
-    Box::new(std::io::Error::new(std::io::ErrorKind::InvalidData, msg))
 }
 
 #[derive(Debug, Clone)]
@@ -74,9 +74,15 @@ impl From<SerializationError> for crate::CryptoError {
     }
 }
 
-pub trait CryptoSerializable: Serializable + Serialize + Deserialize<'static> {}
+impl From<Box<dyn std::error::Error>> for SerializationError {
+    fn from(e: Box<dyn std::error::Error>) -> Self {
+        SerializationError::new(e.to_string(), SerializationErrorKind::Json)
+    }
+}
 
-impl<T: Serializable + Serialize + Deserialize<'static>> CryptoSerializable for T {}
+pub trait CryptoSerializable: Serializable + Serialize + DeserializeOwned {}
+
+impl<T: Serializable + Serialize + DeserializeOwned> CryptoSerializable for T {}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CryptoContainer {
@@ -130,7 +136,7 @@ pub mod binary {
             .map_err(|e| SerializationError::new(format!("bincode serialize_into: {}", e), SerializationErrorKind::Binary))
     }
 
-    pub fn deserialize_from<T: Deserialize<'static>, R: std::io::Read>(reader: R) -> Result<T, SerializationError> {
+    pub fn deserialize_from<T: DeserializeOwned, R: std::io::Read>(reader: R) -> Result<T, SerializationError> {
         bincode::deserialize_from(reader)
             .map_err(|e| SerializationError::new(format!("bincode deserialize_from: {}", e), SerializationErrorKind::Binary))
     }
@@ -154,7 +160,7 @@ pub mod json {
             .map_err(|e| SerializationError::new(format!("JSON to_writer: {}", e), SerializationErrorKind::Json))
     }
 
-    pub fn from_reader<T: Deserialize<'static>, R: std::io::Read>(reader: R) -> Result<T, SerializationError> {
+    pub fn from_reader<T: DeserializeOwned, R: std::io::Read>(reader: R) -> Result<T, SerializationError> {
         serde_json::from_reader(reader)
             .map_err(|e| SerializationError::new(format!("JSON from_reader: {}", e), SerializationErrorKind::Json))
     }
