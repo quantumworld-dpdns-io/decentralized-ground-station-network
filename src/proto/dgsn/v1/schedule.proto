@@ -1,0 +1,178 @@
+syntax = "proto3";
+
+package dgsn.v1;
+
+option go_package = "github.com/quantumworld-dpdns-io/dgsn/api/proto/dgsn/v1;dgsnv1";
+
+import "dgsn/v1/common.proto";
+
+// Scheduler service for managing ground station time slot scheduling
+service Scheduler {
+  // Create a new time slot for scheduling
+  rpc CreateSlot(CreateSlotRequest) returns (ScheduleSlot);
+
+  // Get the schedule for a specific time period
+  rpc GetSchedule(GetScheduleRequest) returns (GetScheduleResponse);
+
+  // Assign a ground station to a time slot
+  rpc AssignStation(AssignStationRequest) returns (AssignStationResponse);
+
+  // Release a previously assigned time slot
+  rpc ReleaseSlot(ReleaseSlotRequest) returns (ReleaseSlotResponse);
+
+  // Get optimal schedule using quantum optimization
+  rpc OptimizeSchedule(OptimizeScheduleRequest) returns (OptimizeScheduleResponse);
+
+  // Subscribe to schedule updates via server-sent events
+  rpc WatchSchedule(WatchScheduleRequest) returns (stream ScheduleEvent);
+
+  // List all slots for a station
+  rpc ListStationSlots(ListStationSlotsRequest) returns (ListStationSlotsResponse);
+}
+
+// A time slot in the schedule
+message ScheduleSlot {
+  Metadata metadata = 1;
+  string station_id = 2;
+  string satellite_id = 3;
+  Timestamp start_time = 4;
+  Timestamp end_time = 5;
+  FrequencyBand frequency = 6;
+  SlotStatus status = 7;
+  double priority = 8;
+  string assigned_by = 9;
+  string reservation_id = 10;
+  ScheduleConstraints constraints = 11;
+  OptimizationMetadata optimization = 12;
+}
+
+enum SlotStatus {
+  SLOT_STATUS_UNSPECIFIED = 0;
+  SLOT_STATUS_AVAILABLE = 1;
+  SLOT_STATUS_RESERVED = 2;
+  SLOT_STATUS_CONFIRMED = 3;
+  SLOT_STATUS_IN_PROGRESS = 4;
+  SLOT_STATUS_COMPLETED = 5;
+  SLOT_STATUS_CANCELLED = 6;
+  SLOT_STATUS_FAILED = 7;
+}
+
+message ScheduleConstraints {
+  double min_elevation_degrees = 1;
+  double max_wind_speed_mps = 2;
+  double min_snr_db = 3;
+  bool require_optical_calibration = 4;
+  bool require_adaptive_tracking = 5;
+  int32 max_concurrent_passes = 6;
+  string preferred_modulation = 7;
+  map<string, string> custom_requirements = 8;
+}
+
+message OptimizationMetadata {
+  bool quantum_optimized = 1;
+  double optimality_score = 2;
+  int32 num_iterations = 3;
+  string algorithm_used = 4;
+  double computation_time_ms = 5;
+  int32 conflicts_resolved = 6;
+}
+
+message CreateSlotRequest {
+  string station_id = 1;
+  Timestamp start_time = 2;
+  Timestamp end_time = 3;
+  FrequencyBand frequency = 4;
+  double priority = 5;
+  ScheduleConstraints constraints = 6;
+}
+
+message GetScheduleRequest {
+  Timestamp start_time = 1;
+  Timestamp end_time = 2;
+  string station_id = 3;
+  string satellite_id = 4;
+  PaginationRequest pagination = 5;
+}
+
+message GetScheduleResponse {
+  repeated ScheduleSlot slots = 1;
+  PaginationResponse pagination = 2;
+  Timestamp schedule_generated_at = 3;
+  bool is_quantum_optimized = 4;
+}
+
+message AssignStationRequest {
+  string slot_id = 1;
+  string station_id = 2;
+  string satellite_id = 3;
+  ScheduleConstraints constraints = 4;
+}
+
+message AssignStationResponse {
+  ScheduleSlot slot = 1;
+  bool success = 2;
+  string message = 3;
+  repeated ScheduleSlot alternative_slots = 4;
+}
+
+message ReleaseSlotRequest {
+  string slot_id = 1;
+  string reason = 2;
+}
+
+message ReleaseSlotResponse {
+  bool success = 1;
+  string message = 2;
+  ScheduleSlot released_slot = 3;
+}
+
+message OptimizeScheduleRequest {
+  Timestamp start_time = 1;
+  Timestamp end_time = 2;
+  repeated string station_ids = 3;
+  repeated string satellite_ids = 4;
+  bool use_quantum = true;
+  int32 optimization_depth = 6;
+  map<string, double> objective_weights = 7;
+}
+
+message OptimizeScheduleResponse {
+  repeated ScheduleSlot optimized_slots = 1;
+  double objective_value = 2;
+  int32 conflicts_remaining = 3;
+  OptimizationMetadata optimization_metadata = 4;
+  int32 total_slots_optimized = 5;
+}
+
+message WatchScheduleRequest {
+  repeated string station_ids = 1;
+  repeated string satellite_ids = 2;
+}
+
+message ScheduleEvent {
+  enum EventType {
+    EVENT_TYPE_UNSPECIFIED = 0;
+    EVENT_TYPE_SLOT_CREATED = 1;
+    EVENT_TYPE_SLOT_ASSIGNED = 2;
+    EVENT_TYPE_SLOT_RELEASED = 3;
+    EVENT_TYPE_SLOT_COMPLETED = 4;
+    EVENT_TYPE_SLOT_CANCELLED = 5;
+    EVENT_TYPE_SCHEDULE_OPTIMIZED = 6;
+  }
+  EventType event_type = 1;
+  ScheduleSlot slot = 2;
+  Timestamp occurred_at = 3;
+}
+
+message ListStationSlotsRequest {
+  string station_id = 1;
+  SlotStatus status_filter = 2;
+  Timestamp from_time = 3;
+  Timestamp to_time = 4;
+  PaginationRequest pagination = 5;
+}
+
+message ListStationSlotsResponse {
+  repeated ScheduleSlot slots = 1;
+  PaginationResponse pagination = 2;
+}
