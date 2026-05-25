@@ -449,6 +449,10 @@ fn dilithium_internal_verify(message: &[u8], signature: &[u8], public_key: &[u8]
     Ok(sig_hash == &expected[..sig_hash_len])
 }
 
+pub fn sign(message: &[u8], secret_key: &[u8]) -> crate::Result<Vec<u8>> {
+    dilithium_internal_sign(message, secret_key)
+}
+
 pub fn verify(message: &[u8], signature: &[u8], public_key: &[u8]) -> crate::Result<bool> {
     dilithium_internal_verify(message, signature, public_key)
 }
