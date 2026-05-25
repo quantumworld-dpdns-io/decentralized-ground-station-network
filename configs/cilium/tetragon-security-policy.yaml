@@ -1,0 +1,159 @@
+apiVersion: cilium.io/v1alpha1
+kind: TracingPolicy
+metadata:
+  name: "dgsn-security-enforcement"
+spec:
+  kprobes:
+    - call: "sys_openat"
+      syscall: true
+      args:
+        - index: 0
+          type: int
+        - index: 1
+          type: string
+        - index: 2
+          type: int
+      selectors:
+        - matchArgs:
+            - index: 1
+              operator: "Prefix"
+              values:
+                - "/etc/shadow"
+                - "/etc/passwd"
+                - "/etc/kubernetes"
+                - "/root/.ssh"
+                - "/home/"
+          matchActions:
+            - action: Sigkill
+              argError: true
+        - matchArgs:
+            - index: 2
+              operator: "Equal"
+              values:
+                - "2"
+          matchActions:
+            - action: Post
+
+    - call: "sys_connect"
+      syscall: true
+      args:
+        - index: 0
+          type: int
+        - index: 1
+          type: sockaddr
+      selectors:
+        - matchArgs:
+            - index: 1
+              operator: "NotIn"
+              values:
+                - "0.0.0.0:0"
+          matchNamespaces:
+            - namespace: "probe"
+              operator: In
+              values:
+                - "host"
+
+    - call: "sys_bind"
+      syscall: true
+      args:
+        - index: 0
+          type: int
+        - index: 1
+          type: sockaddr
+      selectors:
+        - matchArgs:
+            - index: 0
+              operator: "LT"
+              values:
+                - "1024"
+          matchActions:
+            - action: Sigkill
+
+    - call: "sys_execve"
+      syscall: true
+      args:
+        - index: 0
+          type: string
+      selectors:
+        - matchArgs:
+            - index: 0
+              operator: "NotIn"
+              values:
+                - "/usr/local/bin/dgsn-server"
+                - "/usr/local/bin/dgsn-crypto-cli"
+                - "/usr/local/bin/dgsn-signal-processor"
+                - "/usr/local/bin/python3"
+                - "/usr/local/bin/julia"
+                - "/usr/local/bin/node"
+                - "/usr/local/bin/redis-server"
+                - "/usr/local/bin/postgres"
+                - "/bin/sh"
+                - "/bin/bash"
+          matchBinaryInPath:
+            - operator: "In"
+              values:
+                - "/usr/local/bin"
+                - "/usr/bin"
+                - "/bin"
+
+    - call: "security_file_open"
+      syscall: false
+      args:
+        - index: 0
+          type: file
+      selectors:
+        - matchArgs:
+            - index: 0
+              operator: "Prefix"
+              values:
+                - "/etc/dgsn/secrets"
+                - "/var/run/secrets"
+          matchActions:
+            - action: Post
+            - action: Sigkill
+
+  processExec:
+    matchArgs:
+      - index: 0
+        operator: "In"
+        values:
+          - "/usr/local/bin/dgsn-server"
+          - "/usr/local/bin/dgsn-crypto-cli"
+    matchActions:
+      - action: Post
+      - action: FollowFD
+
+  capabilities:
+    - matchCapabilities:
+        - "CAP_SYS_ADMIN"
+        - "CAP_NET_ADMIN"
+        - "CAP_SYS_PTRACE"
+      matchActions:
+        - action: Post
+        - action: Sigkill
+
+  fileAccess:
+    - matchPaths:
+        - prefix: "/etc/dgsn/"
+        - prefix: "/var/lib/dgsn/"
+        - prefix: "/data/"
+        - prefix: "/var/log/dgsn/"
+      matchOperations:
+        - "read"
+        - "write"
+      matchActions:
+        - action: Post
+
+  network:
+    egress:
+      - matchDestinations:
+          - operator: "NotIn"
+            values:
+              - "0.0.0.0/0"
+          - operator: "In"
+            values:
+              - "10.0.0.0/8"
+              - "172.16.0.0/12"
+              - "192.168.0.0/16"
+        matchActions:
+          - action: Post
