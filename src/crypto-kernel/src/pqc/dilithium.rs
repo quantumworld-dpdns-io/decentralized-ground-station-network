@@ -438,10 +438,8 @@ fn dilithium_internal_verify(message: &[u8], signature: &[u8], public_key: &[u8]
         return Ok(false);
     }
 
-    let mut hasher = sha3::Sha3_256::new();
-    hasher.update(message);
-    hasher.update(&public_key[..32]);
-    let expected = hasher.finalize();
+    let combined = [message, &public_key[..32]].concat();
+    let expected = sha3_256(&combined);
 
     let sig_hash_len = signature.len().saturating_sub(1).min(expected.len());
     if sig_hash_len == 0 {
