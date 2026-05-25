@@ -1,0 +1,72 @@
+{{- if not .Values.redis.enabled }}
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "dgsn-infra.fullname" . }}-redis
+  labels:
+    {{- include "dgsn-infra.labels" . | nindent 4 }}
+    app.kubernetes.io/component: redis
+spec:
+  serviceName: {{ include "dgsn-infra.fullname" . }}-redis
+  replicas: 3
+  selector:
+    matchLabels:
+      {{- include "dgsn-infra.labels" . | nindent 6 }}
+      app.kubernetes.io/component: redis
+  template:
+    metadata:
+      labels:
+        {{- include "dgsn-infra.labels" . | nindent 8 }}
+        app.kubernetes.io/component: redis
+    spec:
+      containers:
+        - name: redis
+          image: redis:7.2-alpine
+          ports:
+            - containerPort: 6379
+              name: redis
+          command:
+            - redis-server
+            - /etc/redis/redis.conf
+          volumeMounts:
+            - name: redis-config
+              mountPath: /etc/redis
+            - name: data
+              mountPath: /data
+          resources:
+            requests:
+              cpu: 200m
+              memory: 512Mi
+            limits:
+              cpu: 1
+              memory: 2Gi
+      volumes:
+        - name: redis-config
+          configMap:
+            name: {{ include "dgsn-infra.fullname" . }}-redis-config
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 10Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "dgsn-infra.fullname" . }}-redis
+  labels:
+    {{- include "dgsn-infra.labels" . | nindent 4 }}
+    app.kubernetes.io/component: redis
+spec:
+  clusterIP: None
+  ports:
+    - port: 6379
+      targetPort: 6379
+      name: redis
+  selector:
+    {{- include "dgsn-infra.labels" . | nindent 4 }}
+    app.kubernetes.io/component: redis
+{{- end }}
