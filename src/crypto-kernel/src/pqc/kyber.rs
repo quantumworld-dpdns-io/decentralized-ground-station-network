@@ -1,7 +1,7 @@
-use crate::pqc::{Algorithm, KemScheme, Keygen};
+use crate::pqc::{KemScheme, Keygen};
 use rand::RngCore;
 use serde::{Deserialize, Serialize};
-use sha3::digest::ExtendableOutput;
+use sha3::digest::{ExtendableOutput, Update, XofReader};
 use sha3::Shake256;
 use zeroize::Zeroize;
 
@@ -18,9 +18,10 @@ const SHARED_SECRET_SIZE: usize = 32;
 
 fn shake256_xof(data: &[u8], output_len: usize) -> Vec<u8> {
     let mut hasher = Shake256::default();
-    hasher.update(data);
+    Update::update(&mut hasher, data);
+    let mut reader = hasher.finalize_xof();
     let mut output = vec![0u8; output_len];
-    hasher.squeeze(&mut output);
+    XofReader::squeeze(&mut reader, &mut output);
     output
 }
 
@@ -48,14 +49,11 @@ fn mod_reduce(x: i16) -> i16 {
 
 fn ntt(coeffs: &[i16]) -> Vec<i16> {
     let n = 256usize;
-    let q = 3329i16;
     let mut out = coeffs.to_vec();
-
     let mut len = n / 2;
     let mut start = 0usize;
     while len >= 1 {
         for i in 0..len {
-            let j = (start / (2 * len)) * len + (start % (2 * len));
             let k = start + i;
             let l = start + i + len;
             if l < out.len() && k < out.len() {
@@ -77,9 +75,7 @@ fn inv_ntt(coeffs: &[i16]) -> Vec<i16> {
     let n = 256usize;
     let q = 3329i16;
     let mut out = coeffs.to_vec();
-
     let inv_2 = (q + 1) / 2;
-
     let mut len = 1usize;
     let mut start = 0usize;
     while len < n / 2 {
@@ -104,8 +100,8 @@ fn inv_ntt(coeffs: &[i16]) -> Vec<i16> {
 fn poly_mul(a: &[i16], b: &[i16]) -> Vec<i16> {
     let nta = ntt(a);
     let ntb = ntt(b);
-    let mut prod = vec![0i16; nta.len()];
-    for i in 0..nta.len().min(ntb.len()) {
+    let mut prod = vec![0i16; nta.len().min(ntb.len())];
+    for i in 0..prod.len() {
         prod[i] = mod_reduce(nta[i] * ntb[i]);
     }
     inv_ntt(&prod)
@@ -173,10 +169,6 @@ fn add_polys(a: &[i16], b: &[i16]) -> Vec<i16> {
     a.iter().zip(b.iter()).map(|(x, y)| mod_reduce(x + y)).collect()
 }
 
-fn sub_polys(a: &[i16], b: &[i16]) -> Vec<i16> {
-    a.iter().zip(b.iter()).map(|(x, y)| mod_reduce(x - y)).collect()
-}
-
 fn h(c: &[u8], output_len: usize) -> Vec<u8> {
     shake256_xof(c, output_len)
 }
@@ -194,11 +186,8 @@ fn prf(s: &[u8], b: u8, output_len: usize) -> Vec<u8> {
     shake256_xof(&input, output_len)
 }
 
-fn kdf2(key: &[u8]) -> [u8; 32] {
-    let out = shake256_xof(key, 32);
-    let mut result = [0u8; 32];
-    result.copy_from_slice(&out);
-    result
+fn kdf2(key: &[u8]) -> Vec<u8> {
+    shake256_xof(key, 32)
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -369,7 +358,7 @@ fn kyber_internal_keypair(variant: KyberVariant) -> crate::Result<(Vec<u8>, Vec<
     for i in 0..k {
         let poly = &t[i];
         for j in 0..128 {
-            let val = compress(poly[2 * j], 12) | (compress(poly[2 * j + 1], 12) << 8);
+            let val = compress(poly[2 * j], 12) as u16 | ((compress(poly[2 * j + 1], 12) as u16) << 8);
             if offset < pk_size {
                 pk[offset] = (val & 0xFF) as u8;
             }
@@ -476,15 +465,6 @@ fn kyber_internal_encapsulate(public_key: &[u8]) -> crate::Result<(Vec<u8>, Vec<
     let nt_r: Vec<Vec<i16>> = r_coeffs.iter().map(|poly| ntt(poly)).collect();
     let u = matrix_vector_mul(&matrix_t, &nt_r);
 
-    let mut u_poly = vec![0i16; 256];
-    for i in 0..k {
-        let inv = inv_ntt(&u[i]);
-        let with_noise = add_polys(&inv, &e1_coeffs[i]);
-        for idx in 0..256 {
-            u_poly[idx] = mod_reduce(u_poly[idx]);
-        }
-    }
-
     let mut u_bytes = vec![0u8; k * 32 * variant.du() / 8];
     let mut u_off = 0;
     for i in 0..k {
@@ -502,14 +482,15 @@ fn kyber_internal_encapsulate(public_key: &[u8]) -> crate::Result<(Vec<u8>, Vec<
     }
 
     let t_offset = 33;
-    let t_poly_size = (variant.pk_size() - 32) / k;
+    let t_poly_size = if k > 0 { (variant.pk_size() - 32) / k } else { 0 };
 
     let mut v = vec![0i16; 256];
     for i in 0..k {
         let mut t_i = vec![0i16; 256];
         for j in 0..128 {
-            let lo = public_key[t_offset + i * t_poly_size + 2 * j] as u16;
-            let hi = public_key[t_offset + i * t_poly_size + 2 * j + 1] as u16;
+            let idx = t_offset + i * t_poly_size + 2 * j;
+            let lo = public_key.get(idx).copied().unwrap_or(0) as u16;
+            let hi = public_key.get(idx + 1).copied().unwrap_or(0) as u16;
             let packed = lo | (hi << 8);
             t_i[2 * j] = decompress((packed & 0xFFF) as i16, 12);
             t_i[2 * j + 1] = decompress(((packed >> 12) & 0xFFF) as i16, 12);
@@ -517,15 +498,12 @@ fn kyber_internal_encapsulate(public_key: &[u8]) -> crate::Result<(Vec<u8>, Vec<
         let nt_t_i = ntt(&t_i);
         let dot = poly_mul(&nt_t_i, &nt_r[0]);
         for idx in 0..256 {
-            if i == 0 {
-                v[idx] = mod_reduce(v[idx] + dot[idx]);
-            }
+            v[idx] = mod_reduce(v[idx] + dot[idx]);
         }
     }
     let v_inv = inv_ntt(&v);
 
     let mut v_with_e2 = add_polys(&v_inv, &e2);
-    let compressed_m = |val: i16| -> i16 { ((val as i32) << 1) / 3329 };
 
     for idx in 0..256 {
         let m_bit = (m[idx / 8] >> (idx % 8)) & 1;
@@ -538,13 +516,14 @@ fn kyber_internal_encapsulate(public_key: &[u8]) -> crate::Result<(Vec<u8>, Vec<
         v_with_e2[idx] = compress(compressed_m_val, variant.dv());
     }
 
-    let mut v_bytes = vec![0u8; k * 32 * variant.dv() / 8];
-    for j in 0..128 {
+    let v_bytes_len = k * 32 * variant.dv() / 8;
+    let mut v_bytes = vec![0u8; v_bytes_len];
+    for j in 0..128.min(v_bytes_len / 2) {
         let val = v_with_e2[2 * j] as u16 | ((v_with_e2[2 * j + 1] as u16) << variant.dv() as u16);
-        if 2 * j < v_bytes.len() {
+        if 2 * j < v_bytes_len {
             v_bytes[2 * j] = (val & 0xFF) as u8;
         }
-        if 2 * j + 1 < v_bytes.len() {
+        if 2 * j + 1 < v_bytes_len {
             v_bytes[2 * j + 1] = ((val >> 8) & 0xFF) as u8;
         }
     }
@@ -603,12 +582,6 @@ fn kyber_internal_decapsulate(ciphertext: &[u8], secret_key: &[u8]) -> crate::Re
     let mut pk = vec![0u8; pk_size];
     for i in 0..pk_size.min(secret_key.len().saturating_sub(sk_offset)) {
         pk[i] = secret_key[sk_offset + i];
-    }
-    sk_offset += pk_size;
-
-    let mut z = [0u8; 32];
-    for i in 0..32 {
-        z[i] = secret_key.get(sk_offset + i).copied().unwrap_or(0);
     }
 
     let ct_size = variant.ct_size();
@@ -670,8 +643,8 @@ fn kyber_internal_decapsulate(ciphertext: &[u8], secret_key: &[u8]) -> crate::Re
     }
 
     let g_out_m = g(&m);
-    let mut seed_prime = [0u8; 32];
-    seed_prime.copy_from_slice(&g_out_m[..32]);
+    let mut _seed_prime = [0u8; 32];
+    _seed_prime.copy_from_slice(&g_out_m[..32]);
     let mut k_prime = [0u8; 32];
     k_prime.copy_from_slice(&g_out_m[32..]);
 
