@@ -1,6 +1,5 @@
 use crate::zkp::{ProofSystem, ProofType, ZkpError, ZkpProof, ZkpResult};
 use serde::{Deserialize, Serialize};
-use std::time::Instant;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BatchProof {
