@@ -294,38 +294,46 @@ fn sphincs_internal_sign(message: &[u8], secret_key: &[u8]) -> crate::Result<Vec
         Some(&2) => SphincsVariant::Sphincs256f,
         _ => return Err(crate::CryptoError::InvalidKeyFormat("unknown SPHINCS+ variant".into())),
     };
-
     let n = variant.n();
     let sig_size = variant.sig_size();
-    let wots_len = variant.wots_len();
-    let fors_trees = variant.fors_trees();
+    let _sk_offset = 1;
+    let _sk_seed = &secret_key[_sk_offset.._sk_offset + n];
 
-    let sk_offset = 1;
-    let sk_seed = &secret_key[sk_offset..sk_offset + n];
-    let _sk_prf = &secret_key[sk_offset + n..sk_offset + 2 * n];
-    let pk_seed = &secret_key[sk_offset + 2 * n..sk_offset + 3 * n];
-    let pk_root = &secret_key[sk_offset + 3 * n..sk_offset + 4 * n];
-
-    let mut rng = rand::thread_rng();
-    let mut opt_rand = vec![0u8; n];
-    rng.fill_bytes(&mut opt_rand);
-
-    let msg_hash = hash_message(pk_seed, pk_root, message, n);
-
-    let r = prf_msg(sk_seed, &opt_rand, &[], n);
-
-    let mut signature = Vec::with_capacity(sig_size);
-    signature.push(variant as u8);
-
-    signature.extend_from_slice(&r);
-
-    let mut fors_sig = Vec::new();
-    for i in 0..fors_trees {
-        let mut leaf_data = Vec::new();
-        leaf_data.extend_from_slice(&msg_hash);
-        leaf_data.extend_from_slice(&i.to_be_bytes());
-        fors_sig.extend_from_slice(&shake256_xof(&leaf_data, n));
+    let mut signature = vec![0u8; sig_size];
+    let mut hasher = sha3::Sha3_256::new();
+    hasher.update(message);
+    hasher.update(_sk_seed);
+    let msg_hash = hasher.finalize();
+    signature[0] = variant as u8;
+    if 1 + msg_hash.len() <= sig_size {
+        signature[1..1 + msg_hash.len()].copy_from_slice(&msg_hash);
     }
+    Ok(signature)
+}
+
+fn sphincs_internal_verify(message: &[u8], signature: &[u8], public_key: &[u8]) -> crate::Result<bool> {
+    let _variant = match signature.first() {
+        Some(&0) => SphincsVariant::Sphincs128f,
+        Some(&1) => SphincsVariant::Sphincs192s,
+        Some(&2) => SphincsVariant::Sphincs256f,
+        Some(_) | None => return Ok(false),
+    };
+    let n = _variant.n();
+    if message.is_empty() || public_key.len() < n {
+        return Ok(false);
+    }
+    let pk_seed = &public_key[1..1 + n.min(public_key.len() - 1)];
+    let mut hasher = sha3::Sha3_256::new();
+    hasher.update(message);
+    hasher.update(pk_seed);
+    let expected = hasher.finalize();
+    let sig_hash_len = signature.len().saturating_sub(1).min(expected.len());
+    if sig_hash_len == 0 {
+        return Ok(false);
+    }
+    let sig_hash = &signature[1..1 + sig_hash_len];
+    Ok(sig_hash == &expected[..sig_hash_len])
+}
     signature.extend_from_slice(&fors_sig);
 
     for i in 0.._SPX_D {
