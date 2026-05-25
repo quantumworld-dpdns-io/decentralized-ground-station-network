@@ -1,0 +1,59 @@
+name: Snap Package Release
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Release version'
+        required: true
+
+jobs:
+  build-snap:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Snapcraft
+        run: sudo snap install snapcraft --classic
+      - name: Build snap
+        run: |
+          VERSION="${{ github.event.release.tag_name || inputs.version }}"
+          VERSION="${VERSION#v}"
+          cat > snapcraft.yaml <<EOF
+          name: dgsn
+          base: core22
+          version: '${VERSION}'
+          summary: Decentralized Ground Station Network
+          description: |
+            A decentralized satellite ground station network with
+            post-quantum cryptography and quantum computing integration.
+          grade: stable
+          confinement: strict
+
+          apps:
+            dgsn:
+              command: bin/dgsn
+              plugs: [network, network-bind]
+
+          parts:
+            dgsn:
+              plugin: nil
+              source: .
+              build-packages:
+                - golang-go
+                - rustc
+                - cargo
+                - python3
+                - cmake
+              override-build: |
+                make build
+                mkdir -p \$SNAPCRAFT_PART_INSTALL/bin
+                cp build/dgsn \$SNAPCRAFT_PART_INSTALL/bin/
+              stage-packages:
+                - openssl
+          EOF
+          snapcraft
+      - name: Upload snap
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dgsn_*.snap
