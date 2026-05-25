@@ -142,7 +142,11 @@ fn hash_message(pk_seed: &[u8], pk_root: &[u8], message: &[u8], n: usize) -> Vec
     input.extend_from_slice(pk_root);
     input.extend_from_slice(message);
     let hash = sha3_512_hash(&input);
-    hash[..n * (1 + SPX_FORS_TREES)].to_vec()
+    let mut msg_hash = Vec::with_capacity(n);
+    for i in 0..n {
+        msg_hash.push(hash[i % hash.len()]);
+    }
+    msg_hash
 }
 
 fn prf_msg(seed: &[u8], randomizer: &[u8], _addr: &[u8], n: usize) -> Vec<u8> {
