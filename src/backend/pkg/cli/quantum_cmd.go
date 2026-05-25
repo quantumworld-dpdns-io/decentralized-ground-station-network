@@ -1,9 +1,11 @@
 package cli
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -395,8 +397,3 @@ func (c *CLI) waitForCircuit(circuitID string, timeout time.Duration) error {
 		timeout,
 	)
 }
-
-import (
-	"context"
-	"os"
-)
