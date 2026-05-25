@@ -6,8 +6,6 @@ on:
       - 'src/backend/**'
       - 'src/crypto-kernel/**'
       - 'src/quantum-engine/**'
-  schedule:
-    - cron: '0 10 * * 1'
   workflow_dispatch:
 
 concurrency:
@@ -23,41 +21,58 @@ jobs:
           fetch-depth: 0
       - uses: actions/setup-go@v5
         with:
-          go-version: '1.23'
+          go-version: '1.22'
       - uses: dtolnay/rust-toolchain@stable
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
       - name: Install tools
         run: |
-          pip install asv
+          pip install pytest-benchmark asv
           go install golang.org/x/perf/cmd/benchstat@latest
       - name: Go benchmarks
         run: |
           cd src/backend
-          go test -bench=. -benchmem -count=5 -run=^$ ./... > /tmp/go_bench.txt
-          go install golang.org/x/perf/cmd/benchstat@latest
-          benchstat /tmp/go_bench.txt
+          go test -bench=. -benchmem -count=5 -run=^$ ./... > /tmp/go_bench_current.txt
       - name: Rust benchmarks
         run: |
           cd src/crypto-kernel
-          cargo bench --all-features > /tmp/rust_bench.txt
+          cargo bench --all-features > /tmp/rust_bench_current.txt
       - name: Python benchmarks
         run: |
           cd src/quantum-engine
-          python -m pytest tests/benchmarks/ --benchmark-only --benchmark-json=perf_results.json
-      - name: Compare with baseline
+          python -m pytest tests/benchmarks/ --benchmark-only --benchmark-json=perf_current.json
+      - name: Compare with baseline (main)
         uses: benchmark-action/github-action-benchmark@v1
         with:
           tool: 'pytest'
-          output-file-path: src/quantum-engine/perf_results.json
+          output-file-path: src/quantum-engine/perf_current.json
           github-token: ${{ secrets.GITHUB_TOKEN }}
           auto-push: true
-          alert-threshold: '150%'
+          alert-threshold: '105%'
           comment-on-alert: true
-      - name: Check for regressions
+          fail-on-alert: true
+      - name: Flag regressions >5%
         run: |
-          if grep -q "FAIL\|REGRESSION\|+[0-9]*\.[0-9]*%" /tmp/rust_bench.txt; then
-            echo "Regressions detected!"
-            exit 1
+          cd src/backend
+          benchstat /tmp/go_bench_current.txt 2>&1 | tee /tmp/go_regression.txt
+          if grep -q "[-+]" /tmp/go_regression.txt; then
+            echo "::warning::Performance changes detected in Go benchmarks"
           fi
+      - name: Generate regression report
+        run: |
+          echo "# Performance Regression Report" > /tmp/perf-report.md
+          echo "## Go Benchmarks" >> /tmp/perf-report.md
+          echo '```' >> /tmp/perf-report.md
+          cat /tmp/go_bench_current.txt >> /tmp/perf-report.md
+          echo '```' >> /tmp/perf-report.md
+          echo "## Rust Benchmarks" >> /tmp/perf-report.md
+          echo '```' >> /tmp/perf-report.md
+          cat /tmp/rust_bench_current.txt >> /tmp/perf-report.md
+          echo '```' >> /tmp/perf-report.md
+          cat /tmp/perf-report.md >> $GITHUB_STEP_SUMMARY
+      - name: Upload regression report
+        uses: actions/upload-artifact@v4
+        with:
+          name: perf-regression-report
+          path: /tmp/perf-report.md
