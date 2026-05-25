@@ -1,0 +1,44 @@
+ARG RUST_VERSION=1.78.0
+ARG ALPINE_VERSION=3.20
+
+FROM rust:${RUST_VERSION}-alpine${ALPINE_VERSION} AS builder
+
+RUN apk add --no-cache git build-base cmake ninja python3 clang-dev openssl-dev
+
+WORKDIR /workspace
+
+RUN git clone --depth 1 --branch main https://github.com/open-quantum-safe/liboqs.git /tmp/liboqs && \
+    cd /tmp/liboqs && \
+    cmake -S . -B build \
+        -DBUILD_SHARED_LIBS=ON \
+        -DCMAKE_INSTALL_PREFIX=/usr/local \
+        -DOQS_ALGS_ENABLED="KEM_KYBER;SIG_DILITHIUM;SIG_SPHINCS_PLUS" \
+        -DOQS_BUILD_ONLY_LIB=ON && \
+    cmake --build build --parallel $(nproc) && \
+    cmake --install build
+
+ENV PKG_CONFIG_PATH=/usr/local/lib/pkgconfig
+ENV LD_LIBRARY_PATH=/usr/local/lib
+
+COPY Cargo.toml Cargo.lock ./
+RUN mkdir src && echo "fn main() {}" > src/main.rs
+RUN cargo build --release --features pqc 2>/dev/null || true
+
+COPY . .
+RUN cargo build --release --features pqc
+
+FROM alpine:${ALPINE_VERSION}
+
+RUN apk add --no-cache libstdc++ libgcc
+
+COPY --from=builder /workspace/target/release/libdgsn_crypto.so /usr/local/lib/
+COPY --from=builder /workspace/target/release/dgsn-crypto-cli /usr/local/bin/
+COPY --from=builder /usr/local/lib/liboqs.so* /usr/local/lib/
+
+RUN ldconfig /usr/local/lib
+
+ENV LD_LIBRARY_PATH=/usr/local/lib
+
+EXPOSE 50050
+
+CMD ["dgsn-crypto-cli", "--listen", "0.0.0.0:50050"]
