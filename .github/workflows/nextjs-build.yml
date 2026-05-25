@@ -1,0 +1,50 @@
+name: Next.js Build
+on:
+  push:
+    branches: [main, develop]
+    paths: ['src/frontend/**', 'package.json', 'pnpm-lock.yaml']
+  pull_request:
+    branches: [main]
+    paths: ['src/frontend/**', 'package.json', 'pnpm-lock.yaml']
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  WORKING_DIR: src/frontend
+  NODE_VERSION: '20'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ${{ env.WORKING_DIR }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+          cache-dependency-path: ${{ env.WORKING_DIR }}/pnpm-lock.yaml
+      - name: Install deps
+        run: pnpm install --frozen-lockfile
+      - name: Build
+        run: pnpm build
+        env:
+          NEXT_TELEMETRY_DISABLED: 1
+          NODE_ENV: production
+      - name: Export static files
+        if: github.ref == 'refs/heads/main'
+        run: pnpm next export
+      - name: Upload build
+        uses: actions/upload-artifact@v4
+        with:
+          name: nextjs-build
+          path: ${{ env.WORKING_DIR }}/.next/**
+          retention-days: 7
