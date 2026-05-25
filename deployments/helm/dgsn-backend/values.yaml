@@ -1,0 +1,140 @@
+replicaCount: 3
+
+image:
+  repository: ghcr.io/decentralized-ground-station-network/backend
+  tag: latest
+  pullPolicy: Always
+  pullSecrets:
+    - name: ghcr-secret
+
+serviceAccount:
+  create: true
+  annotations: {}
+  name: dgsn-backend
+
+podAnnotations:
+  prometheus.io/scrape: "true"
+  prometheus.io/port: "9090"
+  sidecar.istio.io/inject: "true"
+
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 1001
+  fsGroup: 1001
+  seccompProfile:
+    type: RuntimeDefault
+
+securityContext:
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop:
+      - ALL
+  readOnlyRootFilesystem: true
+
+service:
+  type: ClusterIP
+  httpPort: 8080
+  grpcPort: 9090
+  metricsPort: 9091
+
+ingress:
+  enabled: true
+  className: nginx
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/backend-protocol: "GRPC"
+  hosts:
+    - host: api.dgsn.io
+      paths:
+        - path: /
+          pathType: Prefix
+          servicePort: http
+  tls:
+    - hosts:
+        - api.dgsn.io
+      secretName: dgsn-api-tls
+
+resources:
+  limits:
+    cpu: 2
+    memory: 4Gi
+  requests:
+    cpu: 500m
+    memory: 1Gi
+
+autoscaling:
+  enabled: true
+  minReplicas: 3
+  maxReplicas: 20
+  targetCPUUtilizationPercentage: 75
+  targetMemoryUtilizationPercentage: 85
+
+probes:
+  liveness:
+    path: /healthz
+    port: http
+    initialDelaySeconds: 10
+    periodSeconds: 30
+  readiness:
+    path: /readyz
+    port: http
+    initialDelaySeconds: 5
+    periodSeconds: 10
+  startup:
+    path: /startupz
+    port: http
+    initialDelaySeconds: 15
+    periodSeconds: 5
+    failureThreshold: 30
+
+config:
+  environment: production
+  logLevel: info
+  logFormat: json
+  database:
+    host: dgsn-db
+    port: 5432
+    name: dgsn
+    poolMin: 5
+    poolMax: 25
+  redis:
+    host: dgsn-redis
+    port: 6379
+    db: 0
+  grpc:
+    maxRecvMsgSize: 50MB
+    maxSendMsgSize: 50MB
+  quantum:
+    enabled: true
+    simulator: qiskit
+    backend: ibmq_qasm_simulator
+  crypto:
+    pqcEnabled: true
+    kemAlgorithm: kyber-1024
+    signatureAlgorithm: dilithium-5
+  rateLimit:
+    enabled: true
+    requestsPerSecond: 100
+    burstSize: 200
+  telemetry:
+    enabled: true
+    otlpEndpoint: dgsn-otel-collector:4317
+    tracesSampleRate: 0.1
+
+nodeSelector: {}
+
+tolerations: []
+
+affinity:
+  podAntiAffinity:
+    preferredDuringSchedulingIgnoredDuringExecution:
+      - weight: 100
+        podAffinityTerm:
+          labelSelector:
+            matchExpressions:
+              - key: app.kubernetes.io/name
+                operator: In
+                values:
+                  - dgsn-backend
+          topologyKey: kubernetes.io/hostname
