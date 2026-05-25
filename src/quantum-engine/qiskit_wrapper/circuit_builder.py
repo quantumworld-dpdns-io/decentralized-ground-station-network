@@ -25,6 +25,7 @@ from qiskit.circuit.library import (
     CRXGate,
     CRYGate,
     CRZGate,
+    QFT,
 )
 
 
@@ -95,6 +96,24 @@ class QuantumCircuitBuilder:
             self.circuit.barrier()
         return self
 
+    def add_rx_layer(self, params_vector: Optional[ParameterVector] = None) -> "QuantumCircuitBuilder":
+        if params_vector is None:
+            params_vector = ParameterVector("psi", self.params.num_qubits)
+        for i in range(self.params.num_qubits):
+            self.circuit.rx(params_vector[i], self.qr[i])
+        if self.params.barrier:
+            self.circuit.barrier()
+        return self
+
+    def add_u3_layer(self, params_vector: Optional[ParameterVector] = None) -> "QuantumCircuitBuilder":
+        if params_vector is None:
+            params_vector = ParameterVector("u", self.params.num_qubits * 3)
+        for i in range(self.params.num_qubits):
+            self.circuit.u(params_vector[3*i], params_vector[3*i+1], params_vector[3*i+2], self.qr[i])
+        if self.params.barrier:
+            self.circuit.barrier()
+        return self
+
     def add_entangling_layer(self) -> "QuantumCircuitBuilder":
         if self.params.entanglement == "linear":
             for i in range(self.params.num_qubits - 1):
@@ -119,6 +138,15 @@ class QuantumCircuitBuilder:
             self.circuit.barrier()
         return self
 
+    def add_yy_layer(self, params_vector: Optional[ParameterVector] = None) -> "QuantumCircuitBuilder":
+        if params_vector is None:
+            params_vector = ParameterVector("beta", self.params.num_qubits)
+        for i in range(self.params.num_qubits - 1):
+            self.circuit.append(RYYGate(params_vector[i]), [self.qr[i], self.qr[i + 1]])
+        if self.params.barrier:
+            self.circuit.barrier()
+        return self
+
     def add_zz_layer(self, params_vector: Optional[ParameterVector] = None) -> "QuantumCircuitBuilder":
         if params_vector is None:
             params_vector = ParameterVector("gamma", self.params.num_qubits)
@@ -128,8 +156,74 @@ class QuantumCircuitBuilder:
             self.circuit.barrier()
         return self
 
+    def add_crx_layer(self, params_vector: Optional[ParameterVector] = None) -> "QuantumCircuitBuilder":
+        if params_vector is None:
+            params_vector = ParameterVector("crx", self.params.num_qubits - 1)
+        for i in range(self.params.num_qubits - 1):
+            self.circuit.append(CRXGate(params_vector[i]), [self.qr[i], self.qr[i + 1]])
+        if self.params.barrier:
+            self.circuit.barrier()
+        return self
+
+    def add_cry_layer(self, params_vector: Optional[ParameterVector] = None) -> "QuantumCircuitBuilder":
+        if params_vector is None:
+            params_vector = ParameterVector("cry", self.params.num_qubits - 1)
+        for i in range(self.params.num_qubits - 1):
+            self.circuit.append(CRYGate(params_vector[i]), [self.qr[i], self.qr[i + 1]])
+        if self.params.barrier:
+            self.circuit.barrier()
+        return self
+
+    def add_crz_layer(self, params_vector: Optional[ParameterVector] = None) -> "QuantumCircuitBuilder":
+        if params_vector is None:
+            params_vector = ParameterVector("crz", self.params.num_qubits - 1)
+        for i in range(self.params.num_qubits - 1):
+            self.circuit.append(CRZGate(params_vector[i]), [self.qr[i], self.qr[i + 1]])
+        if self.params.barrier:
+            self.circuit.barrier()
+        return self
+
+    def add_sx_layer(self) -> "QuantumCircuitBuilder":
+        for i in range(self.params.num_qubits):
+            self.circuit.sx(self.qr[i])
+        if self.params.barrier:
+            self.circuit.barrier()
+        return self
+
+    def add_sdg_layer(self) -> "QuantumCircuitBuilder":
+        for i in range(self.params.num_qubits):
+            self.circuit.sdg(self.qr[i])
+        if self.params.barrier:
+            self.circuit.barrier()
+        return self
+
+    def add_tdg_layer(self) -> "QuantumCircuitBuilder":
+        for i in range(self.params.num_qubits):
+            self.circuit.tdg(self.qr[i])
+        if self.params.barrier:
+            self.circuit.barrier()
+        return self
+
+    def add_reset(self, qubits: Optional[list[int]] = None) -> "QuantumCircuitBuilder":
+        targets = qubits if qubits is not None else list(range(self.params.num_qubits))
+        for i in targets:
+            self.circuit.reset(self.qr[i])
+        if self.params.barrier:
+            self.circuit.barrier()
+        return self
+
+    def add_barrier(self) -> "QuantumCircuitBuilder":
+        self.circuit.barrier()
+        return self
+
     def add_measurement(self) -> "QuantumCircuitBuilder":
         self.circuit.measure(self.qr, self.cr)
+        return self
+
+    def add_measurement_qubits(self, qubits: list[int]) -> "QuantumCircuitBuilder":
+        for q_idx, c_idx in enumerate(qubits):
+            if q_idx < self.params.num_qubits and c_idx < self.params.num_classical:
+                self.circuit.measure(self.qr[q_idx], self.cr[c_idx])
         return self
 
     def build_qaoa(self, num_layers: int = 1) -> QuantumCircuit:
@@ -197,6 +291,21 @@ class QuantumCircuitBuilder:
 
         return self.circuit
 
+    def build_iqft(self) -> QuantumCircuit:
+        n = self.params.num_qubits
+        for i in range(n // 2):
+            self.circuit.swap(self.qr[i], self.qr[n - i - 1])
+        for i in reversed(range(n)):
+            self.circuit.h(self.qr[i])
+            for j in range(i):
+                angle = -np.pi / (2 ** (i - j))
+                self.circuit.cp(angle, self.qr[i], self.qr[j])
+            if self.params.barrier:
+                self.circuit.barrier()
+        if self.params.measurement:
+            self.circuit.measure(self.qr, self.cr)
+        return self.circuit
+
     def build_ghz(self) -> QuantumCircuit:
         self.circuit.h(self.qr[0])
         for i in range(self.params.num_qubits - 1):
@@ -228,6 +337,40 @@ class QuantumCircuitBuilder:
             self.circuit.measure(self.qr, self.cr)
         return self.circuit
 
+    def build_parametric_circuit(self, num_gate_layers: int = 2) -> QuantumCircuit:
+        theta = ParameterVector("theta", self.params.num_qubits * num_gate_layers)
+        phi = ParameterVector("phi", self.params.num_qubits * num_gate_layers)
+        idx = 0
+        for layer in range(num_gate_layers):
+            for i in range(self.params.num_qubits):
+                self.circuit.ry(theta[idx], self.qr[i])
+                idx += 1
+            for i in range(self.params.num_qubits):
+                self.circuit.rz(phi[idx - self.params.num_qubits], self.qr[i])
+            for i in range(self.params.num_qubits - 1):
+                self.circuit.cx(self.qr[i], self.qr[i + 1])
+            if self.params.barrier:
+                self.circuit.barrier()
+        if self.params.measurement:
+            self.circuit.measure(self.qr, self.cr)
+        return self.circuit
+
+    def build_quantum_neural_network(self, num_layers: int = 2) -> QuantumCircuit:
+        weights = ParameterVector("w", 2 * self.params.num_qubits * num_layers)
+        idx = 0
+        self.add_hadamard_layer()
+        for layer in range(num_layers):
+            for i in range(self.params.num_qubits):
+                self.circuit.ry(weights[idx], self.qr[i])
+                idx += 1
+            for i in range(self.params.num_qubits):
+                self.circuit.rz(weights[idx], self.qr[i])
+                idx += 1
+            self.add_entangling_layer()
+        if self.params.measurement:
+            self.circuit.measure(self.qr, self.cr)
+        return self.circuit
+
     def append_circuit(self, other: QuantumCircuit) -> "QuantumCircuitBuilder":
         self.circuit.compose(other, inplace=True)
         return self
@@ -237,6 +380,11 @@ class QuantumCircuitBuilder:
 
     def bind_parameters(self, param_dict: dict) -> QuantumCircuit:
         return self.circuit.assign_parameters(param_dict)
+
+    def copy(self) -> "QuantumCircuitBuilder":
+        new = QuantumCircuitBuilder(self.params)
+        new.circuit = self.circuit.copy()
+        return new
 
     def depth(self) -> int:
         return self.circuit.depth()
