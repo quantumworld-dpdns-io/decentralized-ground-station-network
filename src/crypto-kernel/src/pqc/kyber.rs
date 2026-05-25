@@ -21,7 +21,7 @@ fn shake256_xof(data: &[u8], output_len: usize) -> Vec<u8> {
     Update::update(&mut hasher, data);
     let mut reader = hasher.finalize_xof();
     let mut output = vec![0u8; output_len];
-    XofReader::squeeze(&mut reader, &mut output);
+    reader.squeeze(&mut output);
     output
 }
 
@@ -275,6 +275,7 @@ impl KyberVariant {
 #[zeroize(drop)]
 pub struct KyberPublicKey {
     pub raw: Vec<u8>,
+    #[zeroize(skip)]
     pub variant: KyberVariant,
     pub seed: [u8; 32],
 }
@@ -283,6 +284,7 @@ pub struct KyberPublicKey {
 #[zeroize(drop)]
 pub struct KyberSecretKey {
     pub raw: Vec<u8>,
+    #[zeroize(skip)]
     pub variant: KyberVariant,
     pub pk: Vec<u8>,
     pub z: [u8; 32],
@@ -584,7 +586,7 @@ fn kyber_internal_decapsulate(ciphertext: &[u8], secret_key: &[u8]) -> crate::Re
         pk[i] = secret_key[sk_offset + i];
     }
 
-    let ct_size = variant.ct_size();
+    let _ct_size = variant.ct_size();
     let u_size = k * 32 * variant.du() / 8;
     let v_size = k * 32 * variant.dv() / 8;
 
