@@ -16,8 +16,7 @@ const ERR_NULL_POINTER: i32 = -1;
 const ERR_INVALID_ALGORITHM: i32 = -2;
 const ERR_OPERATION_FAILED: i32 = -3;
 const ERR_BUFFER_TOO_SMALL: i32 = -4;
-const ERR_INVALID_KEY: i32 = -5;
-const ERR_VERIFICATION_FAILED: i32 = -6;
+const ERR_VERIFICATION_FAILED: i32 = -5;
 
 fn alg_from_u8(alg: u8) -> Result<Algorithm, i32> {
     match alg {

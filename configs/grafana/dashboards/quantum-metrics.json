@@ -1,159 +1,172 @@
 {
-  "title": "DGSN Quantum Engine Performance",
-  "version": 1,
+  "title": "DGSN - Quantum Metrics",
+  "version": 2,
   "uid": "dgsn-quantum",
-  "description": "Quantum circuit optimization metrics, QAOA/VQE performance, and error tracking",
+  "description": "Quantum circuit optimization metrics, gate fidelity, simulator vs hardware comparison",
   "tags": ["dgsn", "quantum", "circuits"],
   "timezone": "utc",
   "editable": false,
+  "refresh": "30s",
   "panels": [
     {
-      "title": "Circuits Executed (24h)",
-      "type": "stat",
-      "gridPos": {"h": 4, "w": 4, "x": 0, "y": 0},
-      "targets": [{"expr": "sum(increase(dgsn_quantum_circuits_total[24h]))"}],
-      "fieldConfig": {
-        "defaults": {
-          "unit": "short",
-          "color": {"mode": "thresholds"},
-          "thresholds": {"mode": "absolute", "steps": [{"color": "red", "value": 0}, {"color": "green", "value": 1}]}
-        }
-      }
-    },
-    {
-      "title": "Circuit Success Rate",
-      "type": "stat",
-      "gridPos": {"h": 4, "w": 4, "x": 4, "y": 0},
-      "targets": [{"expr": "dgsn:quantum_success_rate_5m"}],
-      "fieldConfig": {
-        "defaults": {
-          "unit": "percentunit",
-          "color": {"mode": "thresholds"},
-          "thresholds": {"mode": "absolute", "steps": [{"color": "red", "value": 0}, {"color": "yellow", "value": 0.9}, {"color": "green", "value": 0.98}]}
-        }
-      }
-    },
-    {
-      "title": "Active Optimizations",
-      "type": "stat",
-      "gridPos": {"h": 4, "w": 4, "x": 8, "y": 0},
-      "targets": [{"expr": "dgsn_quantum_active_circuits"}],
-      "fieldConfig": {
-        "defaults": {
-          "unit": "short",
-          "color": {"mode": "thresholds"},
-          "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": 0}, {"color": "red", "value": 10}]}
-        }
-      }
-    },
-    {
-      "title": "GPU Utilization",
-      "type": "stat",
-      "gridPos": {"h": 4, "w": 4, "x": 12, "y": 0},
-      "targets": [{"expr": "dgsn_quantum_gpu_utilization_percent"}],
-      "fieldConfig": {
-        "defaults": {
-          "unit": "percent",
-          "color": {"mode": "thresholds"},
-          "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": 0}, {"color": "yellow", "value": 50}, {"color": "red", "value": 90}]}
-        }
-      }
-    },
-    {
-      "title": "Circuits by Type (24h)",
-      "type": "stat",
-      "gridPos": {"h": 4, "w": 4, "x": 16, "y": 0},
-      "targets": [{"expr": "sum by(circuit_type) (increase(dgsn_quantum_circuits_total[24h]))"}],
-      "fieldConfig": {
-        "defaults": {
-          "unit": "short",
-          "color": {"mode": "palette-classic"}
-        }
-      }
-    },
-    {
-      "title": "Error Rate",
-      "type": "stat",
-      "gridPos": {"h": 4, "w": 4, "x": 20, "y": 0},
-      "targets": [{"expr": "rate(dgsn_quantum_errors_total[5m])"}],
-      "fieldConfig": {
-        "defaults": {
-          "unit": "ops",
-          "color": {"mode": "thresholds"},
-          "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": 0}, {"color": "yellow", "value": 1}, {"color": "red", "value": 5}]}
-        }
-      }
-    },
-    {
-      "title": "Circuit Duration (p95 by type)",
+      "title": "Circuit Execution Time",
       "type": "timeseries",
-      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 4},
-      "targets": [{"expr": "dgsn:quantum_circuit_duration_seconds:p95_5m", "legendFormat": "{{circuit_type}}"}],
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 0},
+      "targets": [
+        {"expr": "dgsn:quantum_circuit_duration_seconds:p95_5m", "legendFormat": "p95 {{circuit_type}}"}
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "color": {"mode": "palette-classic"},
+          "custom": {"showPoints": "never", "lineInterpolation": "smooth"}
+        }
+      },
+      "datasource": {"type": "prometheus", "uid": "prometheus"}
+    },
+    {
+      "title": "Circuit Depth Distribution",
+      "type": "histogram",
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 0},
+      "targets": [
+        {"expr": "sum by(le) (rate(dgsn_quantum_circuit_depth_bucket[5m]))"}
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {"mode": "scheme", "scheme": "turbo"},
+          "custom": {"hideFrom": {"legend": false}}
+        }
+      },
+      "datasource": {"type": "prometheus", "uid": "prometheus"}
+    },
+    {
+      "title": "Gate Fidelity Heatmap",
+      "type": "heatmap",
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 8},
+      "targets": [
+        {"expr": "sum by(le) (rate(dgsn_quantum_gate_fidelity_bucket[5m]))"}
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "scheme", "scheme": "turbo"}
+        }
+      },
+      "datasource": {"type": "prometheus", "uid": "prometheus"}
+    },
+    {
+      "title": "Qubit Count Per Circuit",
+      "type": "stat",
+      "gridPos": {"h": 4, "w": 4, "x": 12, "y": 8},
+      "targets": [
+        {"expr": "avg(dgsn_quantum_qubit_count)", "legendFormat": "Avg qubits"}
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {"mode": "thresholds"},
+          "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": 0}, {"color": "yellow", "value": 20}, {"color": "red", "value": 100}]}
+        }
+      },
+      "datasource": {"type": "prometheus", "uid": "prometheus"}
+    },
+    {
+      "title": "Simulator vs Hardware Comparison",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 16},
+      "targets": [
+        {"expr": "dgsn_quantum_simulator_execution_time_seconds", "legendFormat": "Simulator"},
+        {"expr": "dgsn_quantum_hardware_execution_time_seconds", "legendFormat": "Hardware"}
+      ],
       "fieldConfig": {
         "defaults": {
           "unit": "s",
           "color": {"mode": "palette-classic"},
           "custom": {"showPoints": "never"}
         }
-      }
+      },
+      "datasource": {"type": "prometheus", "uid": "prometheus"}
     },
     {
-      "title": "Circuit Throughput",
-      "type": "timeseries",
-      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 4},
+      "title": "Error Mitigation Improvement",
+      "type": "stat",
+      "gridPos": {"h": 4, "w": 4, "x": 12, "y": 12},
       "targets": [
-        {"expr": "sum by(circuit_type) (rate(dgsn_quantum_circuits_total[5m]))", "legendFormat": "{{circuit_type}}"}
+        {"expr": "dgsn_quantum_error_mitigation_improvement_ratio", "legendFormat": "Improvement"}
       ],
       "fieldConfig": {
         "defaults": {
-          "unit": "ops",
+          "unit": "percentunit",
+          "color": {"mode": "thresholds"},
+          "thresholds": {"mode": "absolute", "steps": [{"color": "red", "value": 0}, {"color": "yellow", "value": 0.5}, {"color": "green", "value": 0.8}]}
+        }
+      },
+      "datasource": {"type": "prometheus", "uid": "prometheus"}
+    },
+    {
+      "title": "Quantum Cost",
+      "type": "stat",
+      "gridPos": {"h": 4, "w": 4, "x": 16, "y": 12},
+      "targets": [
+        {"expr": "sum(increase(dgsn_quantum_cost_total[24h]))", "legendFormat": "24h cost"}
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyusd",
+          "color": {"mode": "thresholds"},
+          "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": 0}, {"color": "yellow", "value": 100}, {"color": "red", "value": 1000}]}
+        }
+      },
+      "datasource": {"type": "prometheus", "uid": "prometheus"}
+    },
+    {
+      "title": "Top Circuits by Usage",
+      "type": "table",
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 24},
+      "targets": [
+        {"expr": "topk(10, sum by(circuit_id) (increase(dgsn_quantum_circuits_total[7d])))", "legendFormat": "{{circuit_id}}"}
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {"mode": "thresholds"},
+          "custom": {"align": "auto"}
+        }
+      },
+      "datasource": {"type": "prometheus", "uid": "prometheus"}
+    },
+    {
+      "title": "Optimization Convergence",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 24},
+      "targets": [
+        {"expr": "dgsn_quantum_qaoa_angles_gamma", "legendFormat": "QAOA gamma"},
+        {"expr": "dgsn_quantum_qaoa_angles_beta", "legendFormat": "QAOA beta"},
+        {"expr": "dgsn_quantum_vqe_energy", "legendFormat": "VQE energy"}
+      ],
+      "fieldConfig": {
+        "defaults": {
           "color": {"mode": "palette-classic"},
           "custom": {"showPoints": "never"}
         }
-      }
+      },
+      "datasource": {"type": "prometheus", "uid": "prometheus"}
     },
     {
-      "title": "QAOA Optimization Progress",
-      "type": "timeseries",
-      "gridPos": {"h": 8, "w": 8, "x": 0, "y": 12},
+      "title": "Circuit Success Rate",
+      "type": "gauge",
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 32},
       "targets": [
-        {"expr": "dgsn_quantum_qaoa_angles_gamma", "legendFormat": "gamma"},
-        {"expr": "dgsn_quantum_qaoa_angles_beta", "legendFormat": "beta"}
+        {"expr": "dgsn:quantum_success_rate_5m", "legendFormat": "Success rate"}
       ],
       "fieldConfig": {
         "defaults": {
-          "color": {"mode": "palette-classic"},
-          "custom": {"showPoints": "never"}
+          "unit": "percentunit",
+          "color": {"mode": "thresholds"},
+          "thresholds": {"mode": "absolute", "steps": [{"color": "red", "value": 0}, {"color": "yellow", "value": 0.9}, {"color": "green", "value": 0.98}]}
         }
-      }
-    },
-    {
-      "title": "VQE Energy Convergence",
-      "type": "timeseries",
-      "gridPos": {"h": 8, "w": 8, "x": 8, "y": 12},
-      "targets": [
-        {"expr": "dgsn_quantum_vqe_energy", "legendFormat": "energy"},
-        {"expr": "dgsn_quantum_vqe_energy_best", "legendFormat": "best"}
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "color": {"mode": "palette-classic"},
-          "custom": {"showPoints": "never"}
-        }
-      }
-    },
-    {
-      "title": "Error Distribution",
-      "type": "piechart",
-      "gridPos": {"h": 8, "w": 8, "x": 16, "y": 12},
-      "targets": [
-        {"expr": "sum by(error_type) (increase(dgsn_quantum_errors_total[24h]))"}
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "color": {"mode": "palette-classic"}
-        }
-      }
+      },
+      "datasource": {"type": "prometheus", "uid": "prometheus"}
     }
   ],
   "templating": {
