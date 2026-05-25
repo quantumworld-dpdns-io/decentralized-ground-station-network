@@ -133,9 +133,9 @@ fn generate_matrix(seed: &[u8; 34], k: usize, transposed: bool) -> Vec<Vec<Vec<i
             let seed_bytes = shake256_xof(&buf, 3 * 256);
             let mut poly = Vec::with_capacity(256);
             for idx in 0..256 {
-                let val = ((seed_bytes[3 * idx] as i16)
-                    | ((seed_bytes[3 * idx + 1] as i16) << 8)
-                    | ((seed_bytes[3 * idx + 2] as i16) << 16))
+                let val = ((seed_bytes[3 * idx] as i32)
+                    | ((seed_bytes[3 * idx + 1] as i32) << 8)
+                    | ((seed_bytes[3 * idx + 2] as i32) << 16))
                     & 0x7FF;
                 poly.push(val % 3329);
             }
