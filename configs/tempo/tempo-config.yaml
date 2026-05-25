@@ -17,37 +17,50 @@ distributor:
           endpoint: 0.0.0.0:14250
         thrift_http:
           endpoint: 0.0.0.0:14268
+        thrift_binary:
+          endpoint: 0.0.0.0:6832
+        thrift_compact:
+          endpoint: 0.0.0.0:6831
     zipkin:
       endpoint: 0.0.0.0:9411
+    kafka:
+      protocol:
+        version: 3.1.0
 
 ingester:
   lifecycler:
     address: 0.0.0.0
     ring:
       kvstore:
-        store: inmemory
-      replication_factor: 1
-  max_block_duration: 30m
+        store: memberlist
+      replication_factor: 2
+  max_block_duration: 5m
   max_block_bytes: 1073741824
-  trace_idle_period: 10s
+  trace_idle_period: 30s
   flush_check_period: 30s
+  complete_block_timeout: 60s
 
 compactor:
   compaction:
-    block_retention: 336h
+    block_retention: 48h
     compacted_block_retention: 1h
     max_compaction_objects: 1000000
     max_block_bytes: 107374182400
 
 storage:
   trace:
-    backend: local
-    local:
-      path: /tmp/tempo/blocks
+    backend: s3
+    s3:
+      bucket: dgsn-tempo-traces
+      endpoint: s3.amazonaws.com
+      access_key: ${AWS_ACCESS_KEY_ID}
+      secret_key: ${AWS_SECRET_ACCESS_KEY}
+      insecure: false
     wal:
       path: /tmp/tempo/wal
     block:
       blobs_on_wal_storage: true
+      version: vParquet4
     pool:
       max_workers: 100
       queue_depth: 10000
@@ -76,6 +89,8 @@ search_tags:
   - http.status_code
   - rpc.method
   - rpc.service
+  - dgsn.station_id
+  - dgsn.receipt_id
 
 metrics_generator:
   registry:
@@ -96,9 +111,16 @@ metrics_generator:
         - service
         - component
         - dgsn.operation
+        - http.method
+    local_blocks:
+      max_block_duration: 10m
 
 overrides:
-  max_bytes_per_trace: 10485760
+  max_bytes_per_trace: 52428800
   max_search_bytes_per_trap: 1073741824
   ingestion_rate_limit: 15000
   ingestion_burst_size: 30000
+  metrics_generator_processors:
+    - service-graphs
+    - span-metrics
+    - local-blocks
