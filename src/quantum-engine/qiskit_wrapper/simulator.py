@@ -54,6 +54,13 @@ class NoiseModelConfig:
             readout = ReadoutError(self.readout_error_prob0, self.readout_error_prob1)
             noise_model.add_all_qubit_readout_error(readout)
 
+        if self.t1 > 0 or self.t2 > 0:
+            thermal_error = thermal_relaxation_error(self.t1, self.t2, self.gate_time_1q)
+            noise_model.add_all_qubit_quantum_error(thermal_error, ["u1", "u2", "u3"])
+
+        if self.seed is not None:
+            noise_model.seed = self.seed
+
         return noise_model
 
 
@@ -124,6 +131,32 @@ class AerSimulatorWrapper:
         result = sim.run(state_circuit).result()
         return result.get_statevector().data
 
+    def get_density_matrix(self, circuit: QuantumCircuit) -> np.ndarray:
+        state_circuit = circuit.copy()
+        try:
+            state_circuit.remove_final_measurements()
+        except Exception:
+            pass
+        sim = AerSimulator(method="density_matrix")
+        result = sim.run(state_circuit).result()
+        return result.get_counts()
+
+    def get_unitary(self, circuit: QuantumCircuit) -> np.ndarray:
+        state_circuit = circuit.copy()
+        try:
+            state_circuit.remove_final_measurements()
+        except Exception:
+            pass
+        sim = AerSimulator(method="unitary")
+        result = sim.run(state_circuit).result()
+        return result.get_unitary()
+
+    def run_stabilizer(self, circuit: QuantumCircuit, shots: Optional[int] = None) -> dict[str, int]:
+        run_shots = shots or self.config.shots
+        sim = AerSimulator(method="stabilizer")
+        result = sim.run(circuit, shots=run_shots).result()
+        return result.get_counts()
+
     def get_expectation_value(
         self, circuit: QuantumCircuit, observable: np.ndarray, shots: Optional[int] = None
     ) -> float:
@@ -139,6 +172,35 @@ class AerSimulatorWrapper:
             expectation += count * (basis_state.conj().T @ observable @ basis_state).real
 
         return expectation / total_shots
+
+    def sample_with_noise(self, circuit: QuantumCircuit, noise_model: NoiseModel, shots: int = 1024) -> dict[str, int]:
+        sim = AerSimulator(noise_model=noise_model, shots=shots)
+        result = sim.run(circuit).result()
+        return result.get_counts()
+
+    def run_with_different_noise_levels(
+        self,
+        circuit: QuantumCircuit,
+        noise_factors: list[float],
+        base_noise_config: NoiseModelConfig,
+        shots: int = 1024,
+    ) -> list[dict[str, int]]:
+        results = []
+        for factor in noise_factors:
+            config = NoiseModelConfig(
+                depolarizing_error_rate=base_noise_config.depolarizing_error_rate * factor,
+                gate_error_1q=base_noise_config.gate_error_1q * factor,
+                gate_error_2q=base_noise_config.gate_error_2q * factor,
+                readout_error_prob0=base_noise_config.readout_error_prob0 * factor,
+                readout_error_prob1=base_noise_config.readout_error_prob1 * factor,
+                t1=base_noise_config.t1,
+                t2=base_noise_config.t2,
+                gate_time_1q=base_noise_config.gate_time_1q,
+                gate_time_2q=base_noise_config.gate_time_2q,
+            )
+            wrapper = AerSimulatorWrapper(SimulatorConfig(noise_model_config=config, shots=shots))
+            results.append(wrapper.get_counts(circuit, shots=shots))
+        return results
 
     def reconfigure(self, **kwargs) -> None:
         for key, value in kwargs.items():
