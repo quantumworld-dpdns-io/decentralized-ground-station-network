@@ -1,0 +1,119 @@
+syntax = "proto3";
+
+package dgsn.v1;
+
+option go_package = "github.com/quantumworld-dpdns-io/dgsn/api/proto/dgsn/v1;dgsnv1";
+
+// Timestamp with nanosecond precision
+message Timestamp {
+  int64 seconds = 1;
+  int32 nanos = 2;
+}
+
+// Cryptographic signature for proof-of-reception
+message Signature {
+  string algorithm = 1;      // e.g., "ML-DSA-65", "SLH-DSA-192s"
+  bytes public_key = 2;
+  bytes signature_value = 3;
+  Timestamp signed_at = 4;
+  bytes signing_key_id = 5;
+}
+
+// Generic metadata for API resources
+message Metadata {
+  string id = 1;
+  Timestamp created_at = 2;
+  Timestamp updated_at = 3;
+  string version = 4;
+  map<string, string> labels = 5;
+  map<string, bytes> annotations = 6;
+  string resource_version = 7;
+}
+
+// Pagination request parameters
+message PaginationRequest {
+  int32 page_size = 1;
+  string page_token = 2;
+  string order_by = 3;
+  bool ascending = 4;
+  string filter = 5;
+}
+
+// Pagination response information
+message PaginationResponse {
+  int32 total_size = 1;
+  string next_page_token = 2;
+  string previous_page_token = 3;
+  int32 current_page = 4;
+  int32 total_pages = 5;
+}
+
+// GPS coordinate
+message GeoLocation {
+  double latitude = 1;
+  double longitude = 2;
+  double altitude_meters = 3;
+}
+
+// Station frequency band information
+message FrequencyBand {
+  double center_frequency_hz = 1;
+  double bandwidth_hz = 2;
+  string band_name = 3;       // e.g., "UHF", "L-Band", "S-Band", "X-Band"
+  string polarization = 4;    // "linear", "circular_LHCP", "circular_RHCP"
+}
+
+// Station hardware capabilities
+message HardwareCapabilities {
+  repeated string supported_modulations = 1;
+  repeated FrequencyBand supported_frequencies = 2;
+  double max_bitrate_bps = 3;
+  double min_elevation_degrees = 4;
+  int32 num_antennas = 5;
+  string antenna_type = 6;    // e.g., "Yagi", "Helical", "Parabolic", "PhasedArray"
+  bool has_tracking = 7;
+  bool has_adaptive_optics = 8;
+}
+
+// Station status information
+message StationStatus {
+  enum OperatingStatus {
+    OPERATING_STATUS_UNSPECIFIED = 0;
+    OPERATING_STATUS_ONLINE = 1;
+    OPERATING_STATUS_OFFLINE = 2;
+    OPERATING_STATUS_MAINTENANCE = 3;
+    OPERATING_STATUS_ERROR = 4;
+    OPERATING_STATUS_DEGRADED = 5;
+  }
+  OperatingStatus status = 1;
+  string status_message = 2;
+  Timestamp last_contact = 3;
+  double current_temperature_celsius = 4;
+  double current_humidity_percent = 5;
+  double wind_speed_mps = 6;
+  string weather_condition = 7;
+}
+
+// Satellite pass prediction
+message SatellitePass {
+  string satellite_name = 1;
+  string satellite_id = 2;
+  Timestamp aos_time = 3;
+  Timestamp los_time = 4;
+  double max_elevation_degrees = 5;
+  double azimuth_at_aos = 6;
+  double azimuth_at_los = 7;
+  FrequencyBand frequency = 8;
+  string modulation = 9;
+  double expected_snr_db = 10;
+  string doppler_correction_hz = 11;
+}
+
+// Empty message for requests/responses that need no parameters
+message Empty {}
+
+message ErrorResponse {
+  string error_code = 1;
+  string message = 2;
+  map<string, string> details = 3;
+}
