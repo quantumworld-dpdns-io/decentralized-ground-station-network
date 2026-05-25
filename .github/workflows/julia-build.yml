@@ -1,0 +1,51 @@
+name: Julia Build
+on:
+  push:
+    branches: [main, develop]
+    paths: ['src/signal-processing/**', '**/Project.toml', '**/Manifest.toml']
+  pull_request:
+    branches: [main]
+    paths: ['src/signal-processing/**', '**/Project.toml', '**/Manifest.toml']
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  WORKING_DIR: src/signal-processing
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        julia-version: ['1.10', '1.11']
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        working-directory: ${{ env.WORKING_DIR }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: julia-actions/setup-julia@v2
+        with:
+          version: ${{ matrix.julia-version }}
+      - uses: julia-actions/cache@v2
+      - name: Instantiate package
+        run: julia -e 'using Pkg; Pkg.activate("."); Pkg.instantiate()'
+      - name: Precompile
+        run: julia -e 'using Pkg; Pkg.activate("."); Pkg.precompile()'
+      - name: Build sysimage
+        run: |
+          julia -e '
+            using Pkg
+            Pkg.activate(".")
+            using PackageCompiler
+            create_sysimage(:SignalProcessing, sysimage_path="SignalProcessing.so",
+              precompile_execution_file="precompile.jl")
+          '
+      - name: Upload sysimage
+        uses: actions/upload-artifact@v4
+        with:
+          name: signal-processing-sysimage-${{ matrix.os }}-${{ matrix.julia-version }}
+          path: ${{ env.WORKING_DIR }}/SignalProcessing.so
