@@ -1,0 +1,78 @@
+name: Container Build
+on:
+  push:
+    branches: [main, develop]
+    paths:
+      - 'deployments/docker/**'
+      - 'src/backend/**'
+      - 'src/frontend/**'
+      - 'src/crypto-kernel/**'
+      - 'src/quantum-engine/**'
+      - 'src/signal-processing/**'
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_TAG: ${{ github.sha }}
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        service:
+          - name: backend
+            dockerfile: deployments/docker/Dockerfile.backend
+            context: .
+          - name: frontend
+            dockerfile: deployments/docker/Dockerfile.frontend
+            context: .
+          - name: crypto
+            dockerfile: deployments/docker/Dockerfile.crypto
+            context: .
+          - name: quantum
+            dockerfile: deployments/docker/Dockerfile.quantum
+            context: .
+          - name: signal
+            dockerfile: deployments/docker/Dockerfile.signal
+            context: .
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ github.repository }}/${{ matrix.service.name }}
+          tags: |
+            type=sha,prefix=${{ matrix.service.name }}-
+            type=ref,event=branch,prefix=${{ matrix.service.name }}-
+            type=raw,value=${{ matrix.service.name }}-latest
+            type=raw,value=${{ matrix.service.name }}-${{ github.sha }}
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: ${{ matrix.service.context }}
+          file: ${{ matrix.service.dockerfile }}
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          sbom: true
+          provenance: true
