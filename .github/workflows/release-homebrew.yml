@@ -49,7 +49,7 @@ jobs:
             end
           end
           EOF
-      - name: Push to Homebrew tap
+      - name: Create PR to homebrew-tap repo
         uses: peter-evans/create-pull-request@v6
         with:
           token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
