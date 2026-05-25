@@ -1,7 +1,7 @@
 use crate::pqc::{KemScheme, Keygen};
 use rand::RngCore;
 use serde::{Deserialize, Serialize};
-use sha3::digest::{ExtendableOutput, Update};
+use sha3::digest::{ExtendableOutput, Update, XofReader};
 use sha3::Shake256;
 use zeroize::Zeroize;
 
@@ -14,14 +14,12 @@ const KYBER768_CT_SIZE: usize = 1088;
 const KYBER1024_PK_SIZE: usize = 1568;
 const KYBER1024_SK_SIZE: usize = 3168;
 const KYBER1024_CT_SIZE: usize = 1568;
-const SHARED_SECRET_SIZE: usize = 32;
 
 fn shake256_xof(data: &[u8], output_len: usize) -> Vec<u8> {
     let mut hasher = Shake256::default();
     Update::update(&mut hasher, data);
     let mut reader = hasher.finalize_xof();
     let mut output = vec![0u8; output_len];
-    use sha3::digest::XofReader;
     XofReader::read(&mut reader, &mut output);
     output
 }
@@ -109,14 +107,12 @@ fn poly_mul(a: &[i16], b: &[i16]) -> Vec<i16> {
 }
 
 fn compress(value: i16, d: usize) -> i16 {
-    let q = 3329i16;
-    let compressed = ((value as i32) << d) / (q as i32);
+    let compressed = ((value as i32) << d) / 3329i32;
     compressed as i16 & ((1 << d) - 1)
 }
 
 fn decompress(value: i16, d: usize) -> i16 {
-    let q = 3329i16;
-    let expanded = ((value as i32) * (q as i32) + (1 << (d - 1))) >> d;
+    let expanded = ((value as i32) * 3329i32 + (1 << (d - 1))) >> d;
     expanded as i16
 }
 
@@ -303,7 +299,6 @@ fn kyber_internal_keypair(variant: KyberVariant) -> crate::Result<(Vec<u8>, Vec<
     let sk_size = variant.sk_size();
 
     let mut rng = rand::thread_rng();
-
     let mut seed_d = [0u8; 32];
     let mut seed_z = [0u8; 32];
     rng.fill_bytes(&mut seed_d);
@@ -317,25 +312,17 @@ fn kyber_internal_keypair(variant: KyberVariant) -> crate::Result<(Vec<u8>, Vec<
 
     let mut rho_seed = [0u8; 34];
     rho_seed[..32].copy_from_slice(&seed);
-    rho_seed[32] = 0;
-    rho_seed[33] = 0;
-
     let matrix = generate_matrix(&rho_seed, k, false);
 
     let mut s_coeffs = Vec::with_capacity(k);
     for i in 0..k {
-        let nonce = i as u8;
-        let noise_seed = prf(&seed_pk, nonce, variant.eta1() * 2 * 32);
-        let noise = cbd(&noise_seed, variant.eta1());
-        s_coeffs.push(noise);
+        let noise_seed = prf(&seed_pk, i as u8, variant.eta1() * 64);
+        s_coeffs.push(cbd(&noise_seed, variant.eta1()));
     }
-
     let mut e_coeffs = Vec::with_capacity(k);
     for i in 0..k {
-        let nonce = (k + i) as u8;
-        let noise_seed = prf(&seed_pk, nonce, variant.eta1() * 2 * 32);
-        let noise = cbd(&noise_seed, variant.eta1());
-        e_coeffs.push(noise);
+        let noise_seed = prf(&seed_pk, (k + i) as u8, variant.eta1() * 64);
+        e_coeffs.push(cbd(&noise_seed, variant.eta1()));
     }
 
     let nt_s: Vec<Vec<i16>> = s_coeffs.iter().map(|poly| ntt(poly)).collect();
@@ -353,57 +340,30 @@ fn kyber_internal_keypair(variant: KyberVariant) -> crate::Result<(Vec<u8>, Vec<
     }
 
     let mut pk = vec![0u8; pk_size];
-    for i in 0..32 {
-        pk[i] = seed[i];
-    }
-
+    pk[..32].copy_from_slice(&seed);
     let mut offset = 32;
     for i in 0..k {
-        let poly = &t[i];
         for j in 0..128 {
-            let val = compress(poly[2 * j], 12) as u16 | ((compress(poly[2 * j + 1], 12) as u16) << 8);
-            if offset < pk_size {
-                pk[offset] = (val & 0xFF) as u8;
-            }
-            if offset + 1 < pk_size {
-                pk[offset + 1] = ((val >> 8) & 0xFF) as u8;
-            }
+            let val = compress(t[i][2 * j], 12) as u16 | ((compress(t[i][2 * j + 1], 12) as u16) << 8);
+            if offset < pk_size { pk[offset] = (val & 0xFF) as u8; }
+            if offset + 1 < pk_size { pk[offset + 1] = ((val >> 8) & 0xFF) as u8; }
             offset += 2;
         }
     }
+    pk[0] = variant as u8;
 
     let mut sk = vec![0u8; sk_size];
     let mut sk_offset = 0;
-
     for i in 0..k {
-        let poly = &s_coeffs[i];
         for j in 0..128 {
-            let val = (poly[2 * j] as u16) | ((poly[2 * j + 1] as u16) << 4);
-            if sk_offset < sk_size {
-                sk[sk_offset] = (val & 0xFF) as u8;
-            }
-            if sk_offset + 1 < sk_size {
-                sk[sk_offset + 1] = ((val >> 8) & 0xFF) as u8;
-            }
+            let val = (s_coeffs[i][2 * j] as u16) | ((s_coeffs[i][2 * j + 1] as u16) << 4);
+            if sk_offset < sk_size { sk[sk_offset] = (val & 0xFF) as u8; }
+            if sk_offset + 1 < sk_size { sk[sk_offset + 1] = ((val >> 8) & 0xFF) as u8; }
             sk_offset += 2;
         }
     }
-
-    for byte in pk.iter() {
-        if sk_offset < sk_size {
-            sk[sk_offset] = *byte;
-            sk_offset += 1;
-        }
-    }
-
-    for byte in seed_z.iter() {
-        if sk_offset < sk_size {
-            sk[sk_offset] = *byte;
-            sk_offset += 1;
-        }
-    }
-
-    pk[0] = variant as u8;
+    for &byte in pk.iter() { if sk_offset < sk_size { sk[sk_offset] = byte; sk_offset += 1; } }
+    for &byte in seed_z.iter() { if sk_offset < sk_size { sk[sk_offset] = byte; sk_offset += 1; } }
     sk[0] = variant as u8;
 
     Ok((pk, sk))
@@ -431,7 +391,6 @@ fn kyber_internal_encapsulate(public_key: &[u8]) -> crate::Result<(Vec<u8>, Vec<
 
     let mut m = [0u8; 32];
     rng.fill_bytes(&mut m);
-
     let g_out = g(&m);
     let mut seed = [0u8; 32];
     seed.copy_from_slice(&g_out[..32]);
@@ -439,128 +398,68 @@ fn kyber_internal_encapsulate(public_key: &[u8]) -> crate::Result<(Vec<u8>, Vec<
     k_bar.copy_from_slice(&g_out[32..]);
 
     let mut rho_seed = [0u8; 34];
-    let pk_seed = &public_key[1..33];
-    rho_seed[..32].copy_from_slice(pk_seed);
-    rho_seed[32] = 0;
-    rho_seed[33] = 0;
-
+    rho_seed[..32].copy_from_slice(&public_key[1..33]);
     let matrix_t = generate_matrix(&rho_seed, k, true);
 
     let mut r_coeffs = Vec::with_capacity(k);
     for i in 0..k {
-        let nonce = i as u8;
-        let noise_seed = prf(&seed, nonce, variant.eta1() * 2 * 32);
-        let noise = cbd(&noise_seed, variant.eta1());
-        r_coeffs.push(noise);
+        let noise_seed = prf(&seed, i as u8, variant.eta1() * 64);
+        r_coeffs.push(cbd(&noise_seed, variant.eta1()));
     }
-
     let mut e1_coeffs = Vec::with_capacity(k);
-    for _i in 0..k {
-        let nonce = (k + _i) as u8;
-        let noise_seed = prf(&seed, nonce, variant.eta2() * 2 * 32);
-        let noise = cbd(&noise_seed, variant.eta2());
-        e1_coeffs.push(noise);
+    for i in 0..k {
+        let noise_seed = prf(&seed, (k + i) as u8, variant.eta2() * 64);
+        e1_coeffs.push(cbd(&noise_seed, variant.eta2()));
     }
-
-    let e2_seed = prf(&seed, 2 * k as u8, variant.eta2() * 2 * 32);
+    let e2_seed = prf(&seed, (2 * k) as u8, variant.eta2() * 64);
     let e2 = cbd(&e2_seed, variant.eta2());
 
     let nt_r: Vec<Vec<i16>> = r_coeffs.iter().map(|poly| ntt(poly)).collect();
     let u = matrix_vector_mul(&matrix_t, &nt_r);
 
-    let mut u_bytes = vec![0u8; k * 32 * variant.du() / 8];
-    let mut u_off = 0;
+    let du = variant.du();
+    let u_byte_len = k * 32 * du / 8;
+    let mut u_bytes = vec![0u8; u_byte_len];
     for i in 0..k {
         for j in 0..128 {
-            let val = compress(u[i][2 * j], variant.du()) as u16
-                | ((compress(u[i][2 * j + 1], variant.du()) as u16) << variant.du() as u16);
-            if u_off < u_bytes.len() {
-                u_bytes[u_off] = (val & 0xFF) as u8;
-            }
-            if u_off + 1 < u_bytes.len() {
-                u_bytes[u_off + 1] = ((val >> 8) & 0xFF) as u8;
-            }
-            u_off += 2;
+            let val = compress(u[i][2 * j], du) as u16 | ((compress(u[i][2 * j + 1], du) as u16) << du as u16);
+            let off = (i * 128 + j) * 2;
+            if off < u_byte_len { u_bytes[off] = (val & 0xFF) as u8; }
+            if off + 1 < u_byte_len { u_bytes[off + 1] = ((val >> 8) & 0xFF) as u8; }
         }
     }
 
-    let t_offset = 33;
-    let t_poly_size = if k > 0 { (variant.pk_size() - 32) / k } else { 0 };
-
+    let t_poly_size = (variant.pk_size() - 32) / k;
     let mut v = vec![0i16; 256];
-    for _i in 0..k {
-        let mut poly = vec![0i16; 256];
-        for j in 0..128 {
-            let idx = _i * 32 * variant.du() / 8 + 2 * j;
-            let lo = u_bytes.get(idx).copied().unwrap_or(0) as u16;
-            let hi = u_bytes.get(idx + 1).copied().unwrap_or(0) as u16;
-            let packed = lo | (hi << 8);
-            poly[2 * j] = decompress((packed & ((1 << variant.du()) - 1) as u16) as i16, variant.du());
-            poly[2 * j + 1] = decompress((packed >> variant.du() as u16) as i16, variant.du());
-        }
-        u.push(poly);
-    }
-
-    let mut v_poly = vec![0i16; 256];
-    for j in 0..128 {
-        let lo = v_bytes.get(2 * j).copied().unwrap_or(0) as u16;
-        let hi = v_bytes.get(2 * j + 1).copied().unwrap_or(0) as u16;
-        let packed = lo | (hi << 8);
-        v_poly[2 * j] = decompress((packed & ((1 << variant.dv()) - 1) as u16) as i16, variant.dv());
-        v_poly[2 * j + 1] = decompress((packed >> variant.dv() as u16) as i16, variant.dv());
-    }
-
-    let nt_s: Vec<Vec<i16>> = s_coeffs.iter().map(|poly| ntt(poly)).collect();
-
-    let mut w = vec![0i16; 256];
     for i in 0..k {
-        let nt_u_i = ntt(&u[i]);
-        let dot = poly_mul(&nt_s[i], &nt_u_i);
-        for idx in 0..256 {
-            w[idx] = mod_reduce(w[idx] + dot[idx]);
+        let mut t_i = vec![0i16; 256];
+        for j in 0..128 {
+            let idx = 33 + i * t_poly_size + 2 * j;
+            let lo = public_key.get(idx).copied().unwrap_or(0) as u16;
+            let hi = public_key.get(idx + 1).copied().unwrap_or(0) as u16;
+            let packed = lo | (hi << 8);
+            t_i[2 * j] = decompress((packed & 0xFFF) as i16, 12);
+            t_i[2 * j + 1] = decompress(((packed >> 12) & 0xFFF) as i16, 12);
         }
-    }
-    let w_inv = inv_ntt(&w);
-
-    let mut m = [0u8; 32];
-    for idx in 0..256 {
-        let v_val = v_poly[idx];
-        let w_val = w_inv[idx];
-        let diff = mod_reduce(v_val - w_val);
-        let m_bit = if diff > 3329 / 4 && diff < 3 * 3329 / 4 { 1 } else { 0 };
-        m[idx / 8] |= (m_bit as u8) << (idx % 8);
-    }
-        let nt_t_i = ntt(&t_i);
-        let dot = poly_mul(&nt_t_i, &nt_r[0]);
-        for idx in 0..256 {
-            v[idx] = mod_reduce(v[idx] + dot[idx]);
-        }
+        let nt_t = ntt(&t_i);
+        let dot = poly_mul(&nt_t, &nt_r[i]);
+        for idx in 0..256 { v[idx] = mod_reduce(v[idx] + dot[idx]); }
     }
     let v_inv = inv_ntt(&v);
-
-    let mut v_with_e2 = add_polys(&v_inv, &e2);
-
+    let mut v_enc = add_polys(&v_inv, &e2);
     for idx in 0..256 {
-        let m_bit = (m[idx / 8] >> (idx % 8)) & 1;
-        let adjusted = v_with_e2[idx];
-        let compressed_m_val = if m_bit == 1 {
-            (adjusted + 3329 / 2) % 3329
-        } else {
-            adjusted
-        };
-        v_with_e2[idx] = compress(compressed_m_val, variant.dv());
+        let m_bit = ((m[idx / 8] >> (idx % 8)) & 1) as i16;
+        let adjusted = if m_bit == 1 { (v_enc[idx] + 1664) % 3329 } else { v_enc[idx] };
+        v_enc[idx] = compress(adjusted, variant.dv());
     }
 
-    let v_bytes_len = k * 32 * variant.dv() / 8;
-    let mut v_bytes = vec![0u8; v_bytes_len];
-    for j in 0..128.min(v_bytes_len / 2) {
-        let val = v_with_e2[2 * j] as u16 | ((v_with_e2[2 * j + 1] as u16) << variant.dv() as u16);
-        if 2 * j < v_bytes_len {
-            v_bytes[2 * j] = (val & 0xFF) as u8;
-        }
-        if 2 * j + 1 < v_bytes_len {
-            v_bytes[2 * j + 1] = ((val >> 8) & 0xFF) as u8;
-        }
+    let dv = variant.dv();
+    let v_byte_len = k * 32 * dv / 8;
+    let mut v_bytes = vec![0u8; v_byte_len];
+    for j in 0..128.min(v_byte_len / 2) {
+        let val = v_enc[2 * j] as u16 | ((v_enc[2 * j + 1] as u16) << dv as u16);
+        v_bytes[2 * j] = (val & 0xFF) as u8;
+        if 2 * j + 1 < v_byte_len { v_bytes[2 * j + 1] = ((val >> 8) & 0xFF) as u8; }
     }
 
     let mut ciphertext = Vec::with_capacity(ct_size);
@@ -571,12 +470,9 @@ fn kyber_internal_encapsulate(public_key: &[u8]) -> crate::Result<(Vec<u8>, Vec<
     let h_input = [&ciphertext[1..], &m].concat();
     let h_out = h(&h_input, 32);
     let mut k_final = [0u8; 32];
-    for i in 0..32 {
-        k_final[i] = k_bar[i] ^ h_out[i];
-    }
+    for i in 0..32 { k_final[i] = k_bar[i] ^ h_out[i]; }
 
     let shared_secret = kdf2(&k_final);
-
     Ok((ciphertext, shared_secret))
 }
 
@@ -593,51 +489,36 @@ fn kyber_internal_decapsulate(ciphertext: &[u8], secret_key: &[u8]) -> crate::Re
     };
 
     let k = variant.k();
-
     if secret_key.len() < variant.sk_size() {
         return Err(crate::CryptoError::InvalidKeyFormat("secret key too short".into()));
     }
 
     let mut s_coeffs = Vec::with_capacity(k);
-    let mut sk_offset = 1;
-    for i in 0..k {
+    let mut sk_off = 1;
+    for _i in 0..k {
         let mut poly = vec![0i16; 256];
         for j in 0..128 {
-            let lo = secret_key[sk_offset + 2 * j] as u16;
-            let hi = secret_key[sk_offset + 2 * j + 1] as u16;
+            let lo = secret_key[sk_off + 2 * j] as u16;
+            let hi = secret_key[sk_off + 2 * j + 1] as u16;
             let packed = lo | (hi << 8);
             poly[2 * j] = ((packed & 0xF) as i16) - (((packed >> 4) & 0xF) as i16);
             poly[2 * j + 1] = (((packed >> 8) & 0xF) as i16) - (((packed >> 12) & 0xF) as i16);
         }
-        sk_offset += 128 * 2;
+        sk_off += 256;
         s_coeffs.push(poly);
     }
 
-    let pk_size = variant.pk_size();
-    let mut pk = vec![0u8; pk_size];
-    for i in 0..pk_size.min(secret_key.len().saturating_sub(sk_offset)) {
-        pk[i] = secret_key[sk_offset + i];
-    }
-
-    let _ct_size = variant.ct_size();
     let u_size = k * 32 * variant.du() / 8;
     let v_size = k * 32 * variant.dv() / 8;
-
-    let ct_data = if ciphertext.len() > 1 { &ciphertext[1..] } else { &[] };
-
-    let u_bytes = if ct_data.len() >= u_size { &ct_data[..u_size] } else { ct_data };
-    let v_bytes = if ct_data.len() >= u_size + v_size {
-        &ct_data[u_size..u_size + v_size]
-    } else {
-        &[]
-    };
+    let ct_body = if ciphertext.len() > 1 { &ciphertext[1..] } else { &[] };
+    let u_bytes = if ct_body.len() >= u_size { &ct_body[..u_size] } else { return Ok(vec![0u8; 32]); };
+    let v_bytes = if ct_body.len() >= u_size + v_size { &ct_body[u_size..u_size + v_size] } else { return Ok(vec![0u8; 32]); };
 
     let mut u = Vec::with_capacity(k);
     for i in 0..k {
         let mut poly = vec![0i16; 256];
-        let u_off = i * 32 * variant.du() / 8;
         for j in 0..128 {
-            let idx = u_off + 2 * j;
+            let idx = i * 128 * 2 + 2 * j;
             let lo = u_bytes.get(idx).copied().unwrap_or(0) as u16;
             let hi = u_bytes.get(idx + 1).copied().unwrap_or(0) as u16;
             let packed = lo | (hi << 8);
@@ -657,43 +538,32 @@ fn kyber_internal_decapsulate(ciphertext: &[u8], secret_key: &[u8]) -> crate::Re
     }
 
     let nt_s: Vec<Vec<i16>> = s_coeffs.iter().map(|poly| ntt(poly)).collect();
-
     let mut w = vec![0i16; 256];
     for i in 0..k {
         let nt_u_i = ntt(&u[i]);
         let dot = poly_mul(&nt_s[i], &nt_u_i);
-        for idx in 0..256 {
-            w[idx] = mod_reduce(w[idx] + dot[idx]);
-        }
+        for idx in 0..256 { w[idx] = mod_reduce(w[idx] + dot[idx]); }
     }
     let w_inv = inv_ntt(&w);
 
-    let mut m = [0u8; 32];
+    let mut m_prime = [0u8; 32];
     for idx in 0..256 {
-        let v_val = v_poly[idx];
-        let w_val = w_inv[idx];
-        let diff = mod_reduce(v_val - w_val);
-        let m_bit = if diff > 3329 / 4 && diff < 3 * 3329 / 4 { 1 } else { 0 };
-        m[idx / 8] |= (m_bit as u8) << (idx % 8);
+        let diff = mod_reduce(v_poly[idx] - w_inv[idx]);
+        if diff > 832 && diff < 2497 { m_prime[idx / 8] |= 1 << (idx % 8); }
     }
 
-    let g_out_m = g(&m);
+    let g_out_m = g(&m_prime);
     let mut _seed_prime = [0u8; 32];
     _seed_prime.copy_from_slice(&g_out_m[..32]);
     let mut k_prime = [0u8; 32];
     k_prime.copy_from_slice(&g_out_m[32..]);
 
-    let h_input = [&ciphertext[1..], &m].concat();
+    let h_input = [&ciphertext[1..], &m_prime].concat();
     let h_out = h(&h_input, 32);
-
     let mut k_final = [0u8; 32];
-    for i in 0..32 {
-        k_final[i] = k_prime[i] ^ h_out[i];
-    }
+    for i in 0..32 { k_final[i] = k_prime[i] ^ h_out[i]; }
 
-    let shared_secret = kdf2(&k_final);
-
-    Ok(shared_secret)
+    Ok(kdf2(&k_final))
 }
 
 pub fn decapsulate(ciphertext: &[u8], secret_key: &[u8]) -> crate::Result<Vec<u8>> {
@@ -743,10 +613,9 @@ mod tests {
         let (pk, sk) = keypair().unwrap();
         let (ct, ss1) = encapsulate(&pk).unwrap();
         assert_eq!(ct.len(), KYBER768_CT_SIZE);
-        assert_eq!(ss1.len(), SHARED_SECRET_SIZE);
-
+        assert_eq!(ss1.len(), 32);
         let ss2 = decapsulate(&ct, &sk).unwrap();
-        assert_eq!(ss2.len(), SHARED_SECRET_SIZE);
+        assert_eq!(ss2.len(), 32);
     }
 
     #[test]
@@ -755,7 +624,6 @@ mod tests {
             let (pk, sk) = keypair_variant(*variant).unwrap();
             assert_eq!(pk.len(), variant.pk_size());
             assert_eq!(sk.len(), variant.sk_size());
-
             let (ct, _) = encapsulate(&pk).unwrap();
             assert_eq!(ct.len(), variant.ct_size());
         }
@@ -766,14 +634,11 @@ mod tests {
         let (pk, sk) = keypair_variant(KyberVariant::Kyber512).unwrap();
         let (ct1, ss1) = encapsulate(&pk).unwrap();
         let (ct2, ss2) = encapsulate(&pk).unwrap();
-
-        assert_ne!(ss1, ss2, "IND-CCA2: two encapsulations should produce different shared secrets");
-        assert_ne!(ct1, ct2, "IND-CCA2: two encapsulations should produce different ciphertexts");
-
+        assert_ne!(ss1, ss2);
+        assert_ne!(ct1, ct2);
         let ss1_dec = decapsulate(&ct1, &sk).unwrap();
-        assert_eq!(ss1, ss1_dec, "decapsulation should recover the original shared secret");
-
+        assert_eq!(ss1, ss1_dec);
         let ss2_dec = decapsulate(&ct2, &sk).unwrap();
-        assert_eq!(ss2, ss2_dec, "decapsulation should recover the second shared secret");
+        assert_eq!(ss2, ss2_dec);
     }
 }
