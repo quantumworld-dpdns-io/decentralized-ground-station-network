@@ -300,10 +300,8 @@ fn sphincs_internal_sign(message: &[u8], secret_key: &[u8]) -> crate::Result<Vec
     let _sk_seed = &secret_key[_sk_offset.._sk_offset + n];
 
     let mut signature = vec![0u8; sig_size];
-    let mut hasher = sha3::Sha3_256::new();
-    hasher.update(message);
-    hasher.update(_sk_seed);
-    let msg_hash = hasher.finalize();
+    let combined = [message, _sk_seed].concat();
+    let msg_hash = sha3_256_hash(&combined);
     signature[0] = variant as u8;
     if 1 + msg_hash.len() <= sig_size {
         signature[1..1 + msg_hash.len()].copy_from_slice(&msg_hash);
@@ -323,10 +321,8 @@ fn sphincs_internal_verify(message: &[u8], signature: &[u8], public_key: &[u8]) 
         return Ok(false);
     }
     let pk_seed = &public_key[1..1 + n.min(public_key.len() - 1)];
-    let mut hasher = sha3::Sha3_256::new();
-    hasher.update(message);
-    hasher.update(pk_seed);
-    let expected = hasher.finalize();
+    let combined = [message, pk_seed].concat();
+    let expected = sha3_256_hash(&combined);
     let sig_hash_len = signature.len().saturating_sub(1).min(expected.len());
     if sig_hash_len == 0 {
         return Ok(false);
