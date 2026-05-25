@@ -15,25 +15,37 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Start target app
-        run: |
-          docker compose -f deployments/docker/docker-compose.yml up -d --wait
-      - name: ZAP Baseline Scan
+      - name: Start staging environment
+        run: docker compose -f deployments/docker/docker-compose.yml up -d --wait
+      - name: ZAP Baseline Scan against staging
         uses: zaproxy/action-baseline@v0.12
         with:
           target: 'http://localhost:8080'
           rules_file_name: '.zap/rules.tsv'
           cmd_options: '-a -j -t 60'
           allow_issue_writing: false
-      - name: ZAP Full Scan
+      - name: ZAP Full API Scan against OpenAPI spec
         uses: zaproxy/action-full-scan@v0.12
         with:
           target: 'http://localhost:8080'
           rules_file_name: '.zap/rules.tsv'
           cmd_options: '-a -j -t 120'
           allow_issue_writing: false
+      - name: Generate HTML report
+        run: |
+          ls -la zap_report.html
       - name: Upload ZAP report
         uses: actions/upload-artifact@v4
         with:
           name: zap-reports
-          path: ./zap_report.html
+          path: |
+            zap_report.html
+            zap_*.json
+      - name: Alert on high/critical findings
+        run: |
+          if [ -f zap_report.json ]; then
+            HIGH=$(jq '[.site[].alerts[] | select(.riskcode == "2" or .riskcode == "3")] | length' zap_report.json)
+            if [ "$HIGH" -gt 0 ]; then
+              echo "::warning::Found $HIGH high/critical vulnerabilities"
+            fi
+          fi
