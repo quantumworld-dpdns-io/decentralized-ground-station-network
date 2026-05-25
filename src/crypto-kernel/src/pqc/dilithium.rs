@@ -18,9 +18,9 @@ const DILITHIUM5_SIG_SIZE: usize = 4627;
 const Q: i32 = 8380417;
 const D: usize = 13;
 const GAMMA1: i32 = 1 << 17;
-const GAMMA2: i32 = (Q - 1) / 88;
+const _GAMMA2: i32 = (Q - 1) / 88;
 const BETA: usize = 78;
-const OMEGA: usize = 55;
+const _OMEGA: usize = 55;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum DilithiumVariant {
@@ -86,7 +86,7 @@ impl DilithiumVariant {
         }
     }
 
-    fn tau(&self) -> usize {
+    fn _tau(&self) -> usize {
         match self {
             DilithiumVariant::Dilithium2 => 39,
             DilithiumVariant::Dilithium3 => 49,
@@ -132,7 +132,7 @@ fn mod_reduce(a: i32) -> i32 {
     r
 }
 
-fn mod_plus_minus(a: i32) -> i32 {
+fn _mod_plus_minus(a: i32) -> i32 {
     let mut r = a % Q;
     if r > Q / 2 {
         r -= Q;
@@ -151,39 +151,6 @@ fn power2round(a: i32) -> (i32, i32) {
     };
     let a1 = (a - a0) >> D;
     (a1, a0)
-}
-
-fn decompose(a: i32, gamma2: i32) -> (i32, i32) {
-    let gamma2_half = gamma2 / 2;
-    let mut r = a % Q;
-    if r < 0 {
-        r += Q;
-    }
-    let mut r0 = r % gamma2;
-    if r0 > gamma2_half {
-        r0 -= gamma2;
-    }
-    let r1 = (r - r0) / gamma2;
-    (r1, r0)
-}
-
-fn make_hint(a: i32, b: i32, gamma2: i32) -> bool {
-    let (r1, _) = decompose(a, gamma2);
-    let (r1_prime, _) = decompose(b, gamma2);
-    r1 != r1_prime
-}
-
-fn use_hint(a: i32, hint: bool, gamma2: i32) -> i32 {
-    let (r1, r0) = decompose(a, gamma2);
-    if hint {
-        if r0 > 0 {
-            r1 + 1
-        } else {
-            r1 - 1
-        }
-    } else {
-        r1
-    }
 }
 
 fn ntt(coeffs: &[i32]) -> Vec<i32> {
@@ -247,35 +214,21 @@ fn poly_mul(a: &[i32], b: &[i32]) -> Vec<i32> {
 
 fn shake256(data: &[u8], output_len: usize) -> Vec<u8> {
     let mut hasher = Shake256::default();
-    hasher.update(data);
+    Update::update(&mut hasher, data);
+    let mut reader = hasher.finalize_xof();
     let mut output = vec![0u8; output_len];
-    hasher.squeeze(&mut output);
+    XofReader::squeeze(&mut reader, &mut output);
     output
 }
 
 fn sha3_256(data: &[u8]) -> [u8; 32] {
     use sha3::Digest;
     let mut hasher = Sha3_256::new();
-    hasher.update(data);
+    Digest::update(&mut hasher, data);
     let result = hasher.finalize();
     let mut out = [0u8; 32];
     out.copy_from_slice(&result);
     out
-}
-
-fn expand_mask(seed: &[u8], nonce: u8, output_len: usize) -> Vec<i32> {
-    let mut input = vec![nonce];
-    input.extend_from_slice(seed);
-    let bytes = shake256(&input, output_len * 4);
-    let mut coeffs = Vec::with_capacity(output_len);
-    for i in 0..output_len {
-        let val = (bytes[4 * i] as i32)
-            | ((bytes[4 * i + 1] as i32) << 8)
-            | ((bytes[4 * i + 2] as i32) << 16)
-            | ((bytes[4 * i + 3] as i32) << 24);
-        coeffs.push(val);
-    }
-    coeffs
 }
 
 fn expand_s(seed: &[u8], eta: usize, n: usize) -> Vec<Vec<i32>> {
@@ -389,10 +342,8 @@ fn dilithium_internal_keypair(variant: DilithiumVariant) -> crate::Result<(Vec<u
     rng.fill_bytes(&mut seed);
 
     let mut seed_expand = [0u8; 32];
-    let mut seed_k = [0u8; 32];
     let hashed = sha3_256(&seed);
     seed_expand.copy_from_slice(&hashed[..32]);
-    seed_k.copy_from_slice(&hashed[..32]);
 
     let s1 = expand_s(&seed_expand, eta, l);
     let s2 = expand_s(&seed_expand, eta, k);
@@ -400,8 +351,6 @@ fn dilithium_internal_keypair(variant: DilithiumVariant) -> crate::Result<(Vec<u
     let t = expand_t(&seed_expand, k);
 
     let mut pk = vec![0u8; pk_size];
-    let t_enc_size = k * 256 * D / 8;
-
     let mut offset = 0usize;
     for i in 0..32 {
         if offset < pk_size {
@@ -431,12 +380,8 @@ fn dilithium_internal_keypair(variant: DilithiumVariant) -> crate::Result<(Vec<u
     let mut sk = vec![0u8; sk_size];
     let mut sk_offset = 0;
 
-    for i in 0..32 {
-        if sk_offset < sk_size { sk[sk_offset] = seed_expand[i]; sk_offset += 1; }
-    }
-    for i in 0..32 {
-        if sk_offset < sk_size { sk[sk_offset] = seed_k[i]; sk_offset += 1; }
-    }
+    for i in 0..32 { if sk_offset < sk_size { sk[sk_offset] = seed_expand[i]; sk_offset += 1; } }
+    for i in 0..32 { if sk_offset < sk_size { sk[sk_offset] = hashed[i]; sk_offset += 1; } }
 
     for i in 0..l {
         for j in 0..128 {
@@ -495,13 +440,14 @@ fn dilithium_internal_sign(message: &[u8], secret_key: &[u8]) -> crate::Result<V
 
     let msg_hash = sha3_256(&[message, &rnd].concat());
 
-    let combined = [&msg_hash, &secret_key[1..33]].concat();
+    let combined = [msg_hash.as_slice(), &secret_key[1..33]].concat();
     let mu = sha3_256(&combined);
 
     let mut k = [0u8; 32];
     rng.fill_bytes(&mut k);
 
-    let rho_prime = sha3_256(&[&k, &msg_hash].concat());
+    let rho_prime_input = [k.as_slice(), &msg_hash].concat();
+    let rho_prime = sha3_256(&rho_prime_input);
 
     let mut w1_bytes = Vec::new();
     w1_bytes.extend_from_slice(&mu);
@@ -519,16 +465,16 @@ fn dilithium_internal_sign(message: &[u8], secret_key: &[u8]) -> crate::Result<V
         }
     }
 
-    let z = [&rho_prime, &c_bytes].concat();
-    for byte in shake256(&z, 128).iter() {
+    let z_input = [rho_prime.as_slice(), c_bytes.as_slice()].concat();
+    for byte in shake256(&z_input, 128).iter() {
         if sig_offset < sig_size {
             signature[sig_offset] = *byte;
             sig_offset += 1;
         }
     }
 
-    let mut hint = shake256(&[&c_bytes, &rho_prime], variant.omega());
-    sig_offset = 1 + 32 + 128;
+    let hint_input = [c_bytes.as_slice(), rho_prime.as_slice()].concat();
+    let hint = shake256(&hint_input, variant.omega());
     for byte in hint.iter() {
         if sig_offset < sig_size {
             signature[sig_offset] = *byte;
@@ -589,14 +535,6 @@ fn dilithium_internal_verify(message: &[u8], signature: &[u8], public_key: &[u8]
     if !c_eq {
         return Ok(false);
     }
-
-    let _pk_ref = if public_key.len() >= 8 {
-        let hash = blake3::hash(&[&mu, &sig_data[..32.min(sig_data.len())]].concat());
-        let pk_ref = &hash.as_bytes()[..8];
-        Some(pk_ref.to_vec())
-    } else {
-        None
-    };
 
     Ok(true)
 }
