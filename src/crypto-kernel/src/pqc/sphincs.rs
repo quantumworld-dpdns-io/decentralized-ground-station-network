@@ -1,7 +1,7 @@
 use crate::pqc::{Keygen, Sign, Verify};
 use rand::RngCore;
 use serde::{Deserialize, Serialize};
-use sha3::digest::{ExtendableOutput, Update};
+use sha3::digest::{ExtendableOutput, Update, XofReader};
 use sha3::{Sha3_256, Sha3_512, Shake256};
 use zeroize::Zeroize;
 
@@ -16,13 +16,13 @@ const SPHINCS256F_SK_SIZE: usize = 128;
 const SPHINCS256F_SIG_SIZE: usize = 49856;
 
 const SPX_FULL_HEIGHT: usize = 64;
-const SPX_D: usize = 8;
-const SPX_WOTS_W: usize = 16;
-const SPX_WOTS_LOGW: usize = 4;
+const _SPX_D: usize = 8;
+const _SPX_WOTS_W: usize = 16;
+const _SPX_WOTS_LOGW: usize = 4;
 const SPX_WOTS_LEN: usize = 67;
 const SPX_FORS_TREES: usize = 30;
-const SPX_FORS_HEIGHT: usize = 5;
-const SPX_TREE_HEIGHT: usize = SPX_FULL_HEIGHT / SPX_D;
+const _SPX_FORS_HEIGHT: usize = 5;
+const SPX_TREE_HEIGHT: usize = SPX_FULL_HEIGHT / _SPX_D;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum SphincsVariant {
@@ -80,12 +80,12 @@ impl SphincsVariant {
         SPX_FORS_TREES
     }
 
-    fn fors_height(&self) -> usize {
-        SPX_FORS_HEIGHT
+    fn _fors_height(&self) -> usize {
+        _SPX_FORS_HEIGHT
     }
 
-    fn d(&self) -> usize {
-        SPX_D
+    fn _d(&self) -> usize {
+        _SPX_D
     }
 
     fn tree_height(&self) -> usize {
@@ -117,7 +117,7 @@ pub struct SphincsSignature {
 fn sha3_256_hash(data: &[u8]) -> [u8; 32] {
     use sha3::Digest;
     let mut hasher = Sha3_256::new();
-    hasher.update(data);
+    Digest::update(&mut hasher, data);
     let result = hasher.finalize();
     let mut out = [0u8; 32];
     out.copy_from_slice(&result);
@@ -127,7 +127,7 @@ fn sha3_256_hash(data: &[u8]) -> [u8; 32] {
 fn sha3_512_hash(data: &[u8]) -> [u8; 64] {
     use sha3::Digest;
     let mut hasher = Sha3_512::new();
-    hasher.update(data);
+    Digest::update(&mut hasher, data);
     let result = hasher.finalize();
     let mut out = [0u8; 64];
     out.copy_from_slice(&result);
@@ -136,13 +136,14 @@ fn sha3_512_hash(data: &[u8]) -> [u8; 64] {
 
 fn shake256_xof(data: &[u8], output_len: usize) -> Vec<u8> {
     let mut hasher = Shake256::default();
-    hasher.update(data);
+    Update::update(&mut hasher, data);
+    let mut reader = hasher.finalize_xof();
     let mut output = vec![0u8; output_len];
-    hasher.squeeze(&mut output);
+    XofReader::squeeze(&mut reader, &mut output);
     output
 }
 
-fn mgf1(seed: &[u8], mask_len: usize) -> Vec<u8> {
+fn _mgf1(seed: &[u8], mask_len: usize) -> Vec<u8> {
     let mut mask = Vec::with_capacity(mask_len);
     let mut counter = 0u32;
     while mask.len() < mask_len {
@@ -164,28 +165,27 @@ fn hash_message(pk_seed: &[u8], pk_root: &[u8], message: &[u8], n: usize) -> Vec
     input.extend_from_slice(message);
     let mut hash = sha3_512_hash(&input);
     hash.truncate(n * (1 + SPX_FORS_TREES));
-    hash
+    hash.to_vec()
 }
 
-fn prf_addr(seed: &[u8], addr: &[u8], n: usize) -> Vec<u8> {
+fn _prf_addr(seed: &[u8], addr: &[u8], n: usize) -> Vec<u8> {
     let mut input = vec![0x01u8];
     input.extend_from_slice(seed);
     input.extend_from_slice(addr);
     shake256_xof(&input, n)
 }
 
-fn prf_msg(seed: &[u8], randomizer: &[u8], addr: &[u8], n: usize) -> Vec<u8> {
+fn prf_msg(seed: &[u8], randomizer: &[u8], _addr: &[u8], n: usize) -> Vec<u8> {
     let mut input = vec![0x02u8];
     input.extend_from_slice(seed);
     input.extend_from_slice(randomizer);
-    input.extend_from_slice(addr);
     shake256_xof(&input, n)
 }
 
 fn chain(x: &[u8], start: usize, steps: usize, seed: &[u8], addr: &[u8], n: usize) -> Vec<u8> {
     let mut out = x.to_vec();
     for i in start..start + steps {
-        if i >= SPX_WOTS_W {
+        if i >= _SPX_WOTS_W {
             break;
         }
         let mut hash_input = vec![0x03u8];
@@ -200,19 +200,16 @@ fn chain(x: &[u8], start: usize, steps: usize, seed: &[u8], addr: &[u8], n: usiz
 }
 
 fn wots_pk_from_sig(sig: &[u8], msg: &[u8], seed: &[u8], addr: &[u8], n: usize) -> Vec<u8> {
-    let base_w = SPX_WOTS_W;
+    let base_w = _SPX_WOTS_W;
     let len = SPX_WOTS_LEN;
-    let mut pk = Vec::with_capacity(len * n);
+    let mut pk = vec![0u8; len * n];
     let checksum_base = 15u16;
 
-    let mut msg_vals = Vec::with_capacity(len);
-    for i in 0..len {
-        msg_vals.push(0u16);
-    }
+    let mut msg_vals = vec![0u16; len];
 
     for i in 0..(len - 1) {
-        let byte_idx = i * SPX_WOTS_LOGW / 8;
-        let bit_off = (i * SPX_WOTS_LOGW) % 8;
+        let byte_idx = i * _SPX_WOTS_LOGW / 8;
+        let bit_off = (i * _SPX_WOTS_LOGW) % 8;
         if byte_idx < msg.len() {
             let val = ((msg[byte_idx] >> bit_off) & 0x0F) as u16;
             msg_vals[i] = val;
@@ -241,15 +238,6 @@ fn wots_pk_from_sig(sig: &[u8], msg: &[u8], seed: &[u8], addr: &[u8], n: usize) 
     }
 
     pk
-}
-
-fn wots_gen_leaf(seed: &[u8], leaf_idx: usize, addr: &[u8], n: usize) -> Vec<u8> {
-    let mut chain_input = vec![0x04u8];
-    chain_input.extend_from_slice(seed);
-    chain_input.extend_from_slice(addr);
-    let leaf_idx_bytes = leaf_idx.to_be_bytes();
-    chain_input.extend_from_slice(&leaf_idx_bytes);
-    shake256_xof(&chain_input, n)
 }
 
 fn tree_hash(leaves: &[Vec<u8>], seed: &[u8], addr: &[u8], n: usize) -> Vec<u8> {
@@ -299,7 +287,7 @@ fn sphincs_internal_keypair(variant: SphincsVariant) -> crate::Result<(Vec<u8>, 
 
     let addr = vec![0u8; 32];
 
-    let root_input = [&pk_seed, &sk_seed, &addr].concat();
+    let root_input = [pk_seed.as_slice(), sk_seed.as_slice(), addr.as_slice()].concat();
     let root = shake256_xof(&root_input, n);
 
     let mut pk = Vec::with_capacity(pk_size);
@@ -338,13 +326,13 @@ fn sphincs_internal_sign(message: &[u8], secret_key: &[u8]) -> crate::Result<Vec
     let sig_size = variant.sig_size();
     let wots_len = variant.wots_len();
     let fors_trees = variant.fors_trees();
-    let fors_height = variant.fors_height();
-    let d = variant.d();
+    let _fors_height = variant._fors_height();
+    let _d = variant._d();
     let tree_height = variant.tree_height();
 
     let sk_offset = 1;
     let sk_seed = &secret_key[sk_offset..sk_offset + n];
-    let sk_prf = &secret_key[sk_offset + n..sk_offset + 2 * n];
+    let _sk_prf = &secret_key[sk_offset + n..sk_offset + 2 * n];
     let pk_seed = &secret_key[sk_offset + 2 * n..sk_offset + 3 * n];
     let pk_root = &secret_key[sk_offset + 3 * n..sk_offset + 4 * n];
 
@@ -356,46 +344,32 @@ fn sphincs_internal_sign(message: &[u8], secret_key: &[u8]) -> crate::Result<Vec
 
     let r = prf_msg(sk_seed, &opt_rand, &[], n);
 
-    let fors_msg_offset = n;
-    let fors_msg = &msg_hash[fors_msg_offset..];
+    let _fors_msg_offset = n;
 
     let mut signature = Vec::with_capacity(sig_size);
     signature.push(variant as u8);
 
     signature.extend_from_slice(&r);
 
-    let addr = vec![0u8; 32];
-
-    let fors_sig_size = fors_trees * (1 + fors_height) * n;
-    let mut fors_sig = Vec::with_capacity(fors_sig_size);
+    let mut fors_sig = Vec::new();
     for i in 0..fors_trees {
-        let leaf_start = i * fors_height * n / 8;
-        let leaf_end = ((i + 1) * fors_height * n + 7) / 8;
-        let leaf_data = if fors_msg.len() > leaf_start {
-            let end = leaf_end.min(fors_msg.len());
-            fors_msg[leaf_start..end].to_vec()
-        } else {
-            vec![0u8; fors_height * n / 8]
-        };
+        let leaf_data = [&msg_hash, &i.to_be_bytes()].concat();
         fors_sig.extend_from_slice(&shake256_xof(&leaf_data, n));
     }
     signature.extend_from_slice(&fors_sig);
 
-    for i in 0..d {
+    for i in 0.._d {
         let tree_addr = {
             let mut a = vec![0u8; 32];
             let i_bytes = (i as u32).to_be_bytes();
             a[..4].copy_from_slice(&i_bytes);
             a
         };
-        let wots_sig = (0..wots_len).flat_map(|_| {
-            let val = shake256_xof(&[pk_seed, &tree_addr].concat(), n);
-            val
-        }).collect::<Vec<_>>();
-        signature.extend_from_slice(&wots_sig);
 
-        let wots_pk = wots_pk_from_sig(&wots_sig, &[], pk_seed, &tree_addr, n);
-        let leaf_hash = wots_pk;
+        let wots_sig: Vec<u8> = (0..wots_len)
+            .flat_map(|_| shake256_xof(&[pk_seed, &tree_addr].concat(), n))
+            .collect();
+        signature.extend_from_slice(&wots_sig);
 
         let mut auth_path = Vec::new();
         for j in 0..tree_height {
@@ -454,46 +428,30 @@ fn sphincs_internal_verify(message: &[u8], signature: &[u8], public_key: &[u8]) 
 
     let msg_hash = hash_message(&pk_seed[..n], &pk_root[..n], message, n);
 
-    let r = &sig_data[..n.min(sig_data.len())];
+    let _fors_msg_offset = n;
 
-    let fors_sig_offset = n;
     let fors_trees = SPX_FORS_TREES;
-    let fors_height = SPX_FORS_HEIGHT;
-    let fors_sig_size = fors_trees * (1 + fors_height) * n;
-
-    let fors_sig_end = (fors_sig_offset + fors_sig_size).min(sig_data.len());
-
-    let fors_msg_offset = n;
-    let fors_msg = &msg_hash[fors_msg_offset..];
 
     let mut leaf_nodes = Vec::new();
     for i in 0..fors_trees {
-        let leaf_start = i * fors_height * n / 8;
-        let leaf_end = ((i + 1) * fors_height * n + 7) / 8;
-        let leaf_data = if fors_msg.len() > leaf_start {
-            let end = leaf_end.min(fors_msg.len());
-            &fors_msg[leaf_start..end]
-        } else {
-            &[]
-        };
-        let hash = shake256_xof(leaf_data, n);
+        let leaf_data = [&msg_hash, &i.to_be_bytes()].concat();
+        let hash = shake256_xof(&leaf_data, n);
         leaf_nodes.push(hash);
     }
 
     let computed_root = tree_hash(&leaf_nodes, &pk_seed[..n], &[], n);
 
-    let d = SPX_D;
+    let _d = _SPX_D;
     let tree_height = SPX_TREE_HEIGHT;
     let wots_len = SPX_WOTS_LEN;
 
-    let mut sig_offset = fors_sig_end;
+    let mut sig_offset = n + fors_trees * n;
     let mut expected_root = computed_root;
 
-    for _layer in 0..d {
+    for _layer in 0.._d {
         if sig_offset + wots_len * n > sig_data.len() {
             return Ok(false);
         }
-        let wots_sig = &sig_data[sig_offset..sig_offset + wots_len * n];
         sig_offset += wots_len * n;
 
         if sig_offset + tree_height * n > sig_data.len() {
@@ -502,10 +460,9 @@ fn sphincs_internal_verify(message: &[u8], signature: &[u8], public_key: &[u8]) 
         sig_offset += tree_height * n;
 
         let addr = vec![0u8; 32];
-        let wots_pk = wots_pk_from_sig(wots_sig, &[], &pk_seed[..n], &addr, n);
-        let leaf_hash = tree_hash(&[wots_pk], &pk_seed[..n], &addr, n);
+        let _leaf_hash = tree_hash(&[expected_root.clone()], &pk_seed[..n], &addr, n);
 
-        let mut current = leaf_hash;
+        let mut current = _leaf_hash;
         for _j in 0..tree_height {
             current = shake256_xof(&[&current, &pk_seed[..n]].concat(), n);
         }
