@@ -1,67 +1,124 @@
 replicaCount: 2
 
 image:
-  repository: ghcr.io/decentralized-ground-station-network/quantum
-  tag: latest
-  pullPolicy: Always
+  repository: ghcr.io/dgsn/quantum
+  pullPolicy: IfNotPresent
+  tag: "latest"
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
 
 serviceAccount:
   create: true
-  name: dgsn-quantum
+  annotations: {}
+  name: ""
+
+podAnnotations:
+  prometheus.io/scrape: "true"
+  prometheus.io/port: "9090"
 
 podSecurityContext:
   runAsNonRoot: true
-  runAsUser: 1001
-  fsGroup: 1001
+  runAsUser: 1000
+  fsGroup: 2000
 
 securityContext:
-  allowPrivilegeEscalation: false
   capabilities:
-    drop: [ALL]
+    drop:
+      - ALL
   readOnlyRootFilesystem: true
+  runAsNonRoot: true
+  runAsUser: 1000
 
 service:
   type: ClusterIP
-  port: 8100
-  metricsPort: 9091
+  port: 50052
 
 resources:
-  limits:
-    cpu: 8
-    memory: 16Gi
   requests:
     cpu: 2
     memory: 4Gi
-
-config:
-  environment: production
-  logLevel: info
-  simulator: qiskit
-  backend: ibmq_qasm_simulator
-  maxShots: 100000
-  maxQubits: 32
-  optimizationLevel: 3
-  errorMitigation: true
-  qaoa:
-    defaultLayers: 4
-    maxIterations: 200
-  vqe:
-    defaultAnsatz: hardware_efficient
-    maxIterations: 500
-  telemetry:
-    enabled: true
-    otlpEndpoint: dgsn-otel-collector:4317
+    nvidia.com/gpu: 1
+  limits:
+    cpu: 8
+    memory: 16Gi
+    nvidia.com/gpu: 1
 
 autoscaling:
   enabled: true
   minReplicas: 2
-  maxReplicas: 8
-  targetCPUUtilizationPercentage: 80
+  maxReplicas: 10
+  targetCPUUtilizationPercentage: 70
+  customMetrics:
+    - name: quantum_job_queue_depth
+      targetAverageValue: "10"
+
+livenessProbe:
+  grpc:
+    port: 50052
+  initialDelaySeconds: 60
+  periodSeconds: 15
+  timeoutSeconds: 10
+  failureThreshold: 5
+
+readinessProbe:
+  grpc:
+    port: 50052
+  initialDelaySeconds: 30
+  periodSeconds: 10
+  timeoutSeconds: 5
+  failureThreshold: 3
+
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 1
 
 nodeSelector:
-  dgsn.io/accelerator: "none"
+  kubernetes.io/os: linux
+  nvidia.com/gpu.present: "true"
 
 tolerations:
-  - key: "dgsn.io/quantum"
-    operator: "Exists"
+  - key: "nvidia.com/gpu"
+    operator: "Equal"
+    value: "present"
     effect: "NoSchedule"
+
+affinity:
+  podAntiAffinity:
+    preferredDuringSchedulingIgnoredDuringExecution:
+      - weight: 100
+        podAffinityTerm:
+          labelSelector:
+            matchExpressions:
+              - key: app.kubernetes.io/name
+                operator: In
+                values:
+                  - dgsn-quantum
+          topologyKey: kubernetes.io/hostname
+
+env:
+  LOG_LEVEL: info
+  ENVIRONMENT: production
+  GRPC_PORT: "50052"
+  METRICS_PORT: "9090"
+
+qiskit:
+  enabled: true
+  backend: "aer_simulator"
+  shots: 1024
+  optimization_level: 3
+  configPath: /app/qiskit/config.yaml
+
+quantum:
+  maxJobQueueSize: 100
+  maxConcurrentJobs: 10
+  jobTimeout: 30m
+  enableQPU: false
+  qpuProvider: "ibm"
+  qpuBackend: "ibmq_qasm_simulator"
+
+metrics:
+  enabled: true
+  port: 9090
+  path: /metrics
