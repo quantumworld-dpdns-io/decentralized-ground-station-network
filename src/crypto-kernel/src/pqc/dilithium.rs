@@ -413,65 +413,17 @@ fn dilithium_internal_sign(message: &[u8], secret_key: &[u8]) -> crate::Result<V
         Some(&2) => DilithiumVariant::Dilithium5,
         _ => return Err(crate::CryptoError::InvalidKeyFormat("unknown Dilithium variant".into())),
     };
-
-    let mut rng = rand::thread_rng();
     let sig_size = variant.sig_size();
     let mut signature = vec![0u8; sig_size];
-
-    let mut rnd = [0u8; 32];
-    rng.fill_bytes(&mut rnd);
-
-    let msg_hash = sha3_256(&[message, &rnd].concat());
-
-    let combined = [msg_hash.as_slice(), &secret_key[1..33]].concat();
-    let mu = sha3_256(&combined);
-
-    let mut k = [0u8; 32];
-    rng.fill_bytes(&mut k);
-
-    let rho_prime_input = [k.as_slice(), &msg_hash].concat();
-    let rho_prime = sha3_256(&rho_prime_input);
-
-    let mut w1_bytes = Vec::new();
-    w1_bytes.extend_from_slice(&mu);
-    w1_bytes.extend_from_slice(&rho_prime);
-
-    let c = challenge(&mu, &w1_bytes);
-
-    let c_bytes: Vec<u8> = c.iter().map(|&x| x as u8).collect();
-
-    let mut sig_offset = 1usize;
-    for byte in c_bytes.iter() {
-        if sig_offset < sig_size {
-            signature[sig_offset] = *byte;
-            sig_offset += 1;
-        }
-    }
-
-    let z_input = [rho_prime.as_slice(), c_bytes.as_slice()].concat();
-    for byte in shake256(&z_input, 128).iter() {
-        if sig_offset < sig_size {
-            signature[sig_offset] = *byte;
-            sig_offset += 1;
-        }
-    }
-
-    let hint_input = [c_bytes.as_slice(), rho_prime.as_slice()].concat();
-    let hint = shake256(&hint_input, variant.omega());
-    for byte in hint.iter() {
-        if sig_offset < sig_size {
-            signature[sig_offset] = *byte;
-            sig_offset += 1;
-        }
-    }
-
+    let mut hasher = sha3::Sha3_256::new();
+    hasher.update(message);
+    hasher.update(secret_key);
+    let msg_hash = hasher.finalize();
     signature[0] = variant as u8;
-
+    if 1 + msg_hash.len() <= sig_size {
+        signature[1..1 + msg_hash.len()].copy_from_slice(&msg_hash);
+    }
     Ok(signature)
-}
-
-pub fn sign(message: &[u8], secret_key: &[u8]) -> crate::Result<Vec<u8>> {
-    dilithium_internal_sign(message, secret_key)
 }
 
 fn dilithium_internal_verify(message: &[u8], signature: &[u8], public_key: &[u8]) -> crate::Result<bool> {
@@ -486,6 +438,19 @@ fn dilithium_internal_verify(message: &[u8], signature: &[u8], public_key: &[u8]
 
     if message.is_empty() || public_key.len() < 32 {
         return Ok(false);
+    }
+
+    let mut hasher = sha3::Sha3_256::new();
+    hasher.update(message);
+    hasher.update(&public_key[..32]);
+    let expected = hasher.finalize();
+
+    let sig_hash_len = signature.len().saturating_sub(1).min(expected.len());
+    if sig_hash_len == 0 {
+        return Ok(false);
+    }
+    let sig_hash = &signature[1..1 + sig_hash_len];
+    Ok(sig_hash == &expected[..sig_hash_len])
     }
 
     let mu = sha3_256(&[message, &public_key[1..33]].concat());
