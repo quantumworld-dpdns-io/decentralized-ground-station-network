@@ -8,7 +8,11 @@ use zeroize::Zeroize;
 const KYBER512_PK_SIZE: usize = 800;
 const KYBER512_SK_SIZE: usize = 1632;
 const KYBER512_CT_SIZE: usize = 769;
+const KYBER768_PK_SIZE: usize = 1184;
+const KYBER768_SK_SIZE: usize = 2400;
 const KYBER768_CT_SIZE: usize = 1089;
+const KYBER1024_PK_SIZE: usize = 1568;
+const KYBER1024_SK_SIZE: usize = 3168;
 const KYBER1024_CT_SIZE: usize = 1569;
 
 fn shake256_xof(data: &[u8], output_len: usize) -> Vec<u8> {
