@@ -2,11 +2,16 @@ pub mod kdf;
 pub mod merkle;
 pub mod pqc;
 pub mod serialization;
+pub mod zkp;
+
+#[cfg(feature = "wasm")]
+pub mod wasm;
 
 pub use kdf::Kdf;
 pub use merkle::MerkleTree;
-pub use pqc::{dilithium, kyber, sphincs, Keygen, Sign, Verify};
+pub use pqc::{dilithium, kyber, sphincs, KemScheme, KeyType, Keygen, SignatureScheme, Sign, Verify};
 pub use serialization::Serializable;
+pub use zkp::{noir, risc_zero, aggregator, merkle_proof, ProofSystem, ProofType, ZkpError, ZkpProof, ZkpResult};
 
 pub const VERSION: &str = "0.1.0";
 pub const CRYPTO_KERNEL_NAME: &str = "dgsn-crypto-kernel";
@@ -44,6 +49,12 @@ pub enum CryptoError {
 
     #[error("merkle tree error: {0}")]
     MerkleError(String),
+
+    #[error("FFI error: {0}")]
+    FfiError(String),
+
+    #[error("zero-knowledge proof error: {0}")]
+    ZkpError(String),
 }
 
 impl From<CryptoError> for std::io::Error {
