@@ -1,0 +1,5 @@
+msrv = "1.78"
+warn-on-all-warnings = true
+
+[allowed_categories]
+allow = ["nursery", "pedantic"]

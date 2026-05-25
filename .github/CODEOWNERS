@@ -1,0 +1,38 @@
+# Global owners
+* @quantumworld-dpdns-io
+
+# Go backend
+/src/backend/ @quantumworld-dpdns-io
+
+# Rust crypto kernel
+/src/crypto-kernel/ @quantumworld-dpdns-io
+
+# Python quantum engine
+/src/quantum-engine/ @quantumworld-dpdns-io
+
+# Julia signal processing
+/src/signal-processing/ @quantumworld-dpdns-io
+
+# Next.js frontend
+/src/frontend/ @quantumworld-dpdns-io
+
+# OpenQASM circuits
+/src/quantum-circuits/ @quantumworld-dpdns-io
+
+# Protobuf definitions
+/src/proto/ @quantumworld-dpdns-io
+
+# AI agents
+/src/agents/ @quantumworld-dpdns-io
+
+# Tests
+/tests/ @quantumworld-dpdns-io
+
+# CI/CD
+/.github/ @quantumworld-dpdns-io
+
+# Documentation
+/docs/ @quantumworld-dpdns-io
+
+# Deployments
+/deployments/ @quantumworld-dpdns-io
