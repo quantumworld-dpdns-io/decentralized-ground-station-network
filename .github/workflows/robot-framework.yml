@@ -1,11 +1,9 @@
 name: Robot Framework Tests
 on:
   push:
-    branches: [main, develop]
-    paths: ['tests/robot-framework/**', 'src/backend/**']
+    branches: [main]
   pull_request:
     branches: [main]
-    paths: ['tests/robot-framework/**', 'src/backend/**']
   schedule:
     - cron: '0 2 * * *'
   workflow_dispatch:
@@ -28,37 +26,18 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - name: Install deps
+      - name: Install dependencies
         run: |
-          pip install robotframework robotframework-seleniumlibrary robotframework-requests \
-            robotframework-sshlibrary robotframework-databaselibrary \
-            robotframework-jsonlibrary robotframework-archivelibrary \
-            robotframework-faker
-      - name: Start backend
+          pip install robotframework robotframework-seleniumlibrary robotframework-requests robotframework-sshlibrary
+      - name: Run Robot Framework tests
         run: |
-          cd ../../src/backend
-          go run ./cmd/server &
-          sleep 5
-          echo "Backend started"
-      - name: Run OWASP test suites
-        run: |
-          robot --outputdir results --variable BROWSER:headlesschrome \
-            --include owasp --name "OWASP Security Suite" \
-            owasp_suites/
-      - name: Run API tests
-        run: |
-          robot --outputdir results --include api --name "API Test Suite" \
-            api_tests/
-      - name: Run integration tests
-        run: |
-          robot --outputdir results --name "Integration Test Suite" \
-            integration/
-      - name: Upload results
+          robot --outputdir results --variablefile variables.resource suites/
+      - name: Upload test results
         uses: actions/upload-artifact@v4
         with:
           name: robot-results
           path: ${{ env.ROBOT_DIR }}/results/
-      - name: Publish report
+      - name: Publish Robot Framework report
         uses: joonvena/robotframework-reporter-action@v2
         with:
           report_path: ${{ env.ROBOT_DIR }}/results
