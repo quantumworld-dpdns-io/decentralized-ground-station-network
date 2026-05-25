@@ -1,0 +1,67 @@
+replicaCount: 2
+
+image:
+  repository: ghcr.io/decentralized-ground-station-network/quantum
+  tag: latest
+  pullPolicy: Always
+
+serviceAccount:
+  create: true
+  name: dgsn-quantum
+
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 1001
+  fsGroup: 1001
+
+securityContext:
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop: [ALL]
+  readOnlyRootFilesystem: true
+
+service:
+  type: ClusterIP
+  port: 8100
+  metricsPort: 9091
+
+resources:
+  limits:
+    cpu: 8
+    memory: 16Gi
+  requests:
+    cpu: 2
+    memory: 4Gi
+
+config:
+  environment: production
+  logLevel: info
+  simulator: qiskit
+  backend: ibmq_qasm_simulator
+  maxShots: 100000
+  maxQubits: 32
+  optimizationLevel: 3
+  errorMitigation: true
+  qaoa:
+    defaultLayers: 4
+    maxIterations: 200
+  vqe:
+    defaultAnsatz: hardware_efficient
+    maxIterations: 500
+  telemetry:
+    enabled: true
+    otlpEndpoint: dgsn-otel-collector:4317
+
+autoscaling:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 8
+  targetCPUUtilizationPercentage: 80
+
+nodeSelector:
+  dgsn.io/accelerator: "none"
+
+tolerations:
+  - key: "dgsn.io/quantum"
+    operator: "Exists"
+    effect: "NoSchedule"
