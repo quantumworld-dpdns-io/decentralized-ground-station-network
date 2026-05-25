@@ -1,0 +1,82 @@
+{
+  "mcpServers": {
+    "dgsn-crypto-kernel": {
+      "command": "wasmtime",
+      "args": [
+        "run",
+        "--dir",
+        ".",
+        "--",
+        "src/crypto-kernel/wasm/pkg/dgsn_crypto_kernel_bg.wasm"
+      ],
+      "env": {
+        "DGSN_ALGORITHM": "ML-DSA-65",
+        "RUST_LOG": "info"
+      },
+      "description": "Post-quantum cryptographic operations via Wasmtime runtime"
+    },
+    "dgsn-quantum-scheduler": {
+      "command": "python3",
+      "args": [
+        "-m",
+        "uvicorn",
+        "src.quantum-engine.api.mcp_server:app",
+        "--host",
+        "127.0.0.1",
+        "--port",
+        "8091"
+      ],
+      "env": {
+        "PYTHONPATH": "${workspaceFolder}/src/quantum-engine",
+        "DGSN_REDIS_URL": "redis://localhost:6379/0"
+      },
+      "description": "Quantum circuit optimization and scheduling via QAOA/VQE"
+    },
+    "dgsn-signal-processor": {
+      "command": "julia",
+      "args": [
+        "--project=src/signal-processing",
+        "-e",
+        "using DGSN; DGSN.MCP.start_server()"
+      ],
+      "env": {
+        "JULIA_LOAD_PATH": "${workspaceFolder}/src/signal-processing",
+        "DGSN_REDIS_URL": "redis://localhost:6379/0"
+      },
+      "description": "Real-time RF signal processing and modulation classification"
+    },
+    "dgsn-postgres": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-postgres",
+        "--connection-string",
+        "postgresql://dgsn:${DGSN_DB_PASSWORD}@localhost:5432/dgsn"
+      ],
+      "description": "PostgreSQL database access for ground station data"
+    },
+    "dgsn-github": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-github"
+      ],
+      "env": {
+        "GITHUB_TOKEN": "${DGSN_GITHUB_TOKEN}"
+      },
+      "description": "GitHub project management and code review"
+    },
+    "dgsn-filesystem": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-filesystem",
+        "${workspaceFolder}/configs",
+        "${workspaceFolder}/docs",
+        "${workspaceFolder}/scripts",
+        "${workspaceFolder}/deployments"
+      ],
+      "description": "Filesystem access for DGSN configuration and documentation"
+    }
+  }
+}
