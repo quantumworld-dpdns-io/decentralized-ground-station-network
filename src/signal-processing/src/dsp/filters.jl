@@ -7,7 +7,10 @@ using Random
 
 export wiener_filter, kalman_filter, matched_filter,
        lowpass_filter, highpass_filter, bandpass_filter,
-       notch_filter, adaptive_filter, fir_design, iir_design
+       notch_filter, adaptive_filter, fir_design, iir_design,
+       butterworth_filter, chebyshev_filter, chebyshev2_filter,
+       elliptic_filter, design_raised_cosine, lms_filter,
+       rls_filter, rls_filter_step!
 
 abstract type AbstractFilter end
 
@@ -86,6 +89,30 @@ function notch_filter(signal::Vector{T}, freq::Float64, fs::Float64; q_factor::F
     w0 = freq / (fs / 2)
     bw = w0 / q_factor
     b, a = DSP.iirnotch(w0, bw)
+    return DSP.filt(b, a, signal)
+end
+
+function butterworth_filter(signal::Vector{T}, cutoff::Float64, fs::Float64; order::Int=4, filter_type::Symbol=:lowpass) where {T<:Number}
+    normalized = cutoff / fs
+    b, a = DSP.Butterworth(order, normalized, filter_type)
+    return DSP.filt(b, a, signal)
+end
+
+function chebyshev_filter(signal::Vector{T}, cutoff::Float64, fs::Float64; order::Int=4, ripple::Float64=0.5, filter_type::Symbol=:lowpass) where {T<:Number}
+    normalized = cutoff / fs
+    b, a = DSP.Chebyshev1(order, ripple, normalized, filter_type)
+    return DSP.filt(b, a, signal)
+end
+
+function chebyshev2_filter(signal::Vector{T}, cutoff::Float64, fs::Float64; order::Int=4, stopband_atten::Float64=40.0, filter_type::Symbol=:lowpass) where {T<:Number}
+    normalized = cutoff / fs
+    b, a = DSP.Chebyshev2(order, stopband_atten, normalized, filter_type)
+    return DSP.filt(b, a, signal)
+end
+
+function elliptic_filter(signal::Vector{T}, cutoff::Float64, fs::Float64; order::Int=4, ripple::Float64=0.5, stopband_atten::Float64=40.0, filter_type::Symbol=:lowpass) where {T<:Number}
+    normalized = cutoff / fs
+    b, a = DSP.Elliptic(order, ripple, stopband_atten, normalized, filter_type)
     return DSP.filt(b, a, signal)
 end
 
@@ -189,6 +216,62 @@ function adaptive_filter(signal::Vector{T}, desired::Vector{T}; mu::Float64=0.01
     return output, error, w
 end
 
+function lms_filter(signal::Vector{T}, desired::Vector{T}; mu::Float64=0.01, order::Int=32) where {T<:Number}
+    n = length(signal)
+    w = zeros(T, order)
+    output = zeros(T, n)
+    error = zeros(T, n)
+
+    for i in (order+1):n
+        x = signal[i-order+1:i]
+        output[i] = dot(w, x)
+        error[i] = desired[i] - output[i]
+        w .+= 2 * mu * conj(error[i]) * x
+    end
+
+    return output, error, w
+end
+
+struct RLSFilter
+    order::Int
+    lambda::Float64
+    delta::Float64
+    w::Vector{Float64}
+    P::Matrix{Float64}
+end
+
+function RLSFilter(order::Int=32; lambda::Float64=0.99, delta::Float64=1.0)
+    w = zeros(Float64, order)
+    P = delta * I(order)
+    return RLSFilter(order, lambda, delta, w, P)
+end
+
+function rls_filter_step!(rls::RLSFilter, x::Vector{Float64}, d::Float64)
+    y = dot(rls.w, x)
+    e = d - y
+    Pi = rls.P * x
+    k = Pi / (rls.lambda + dot(x, Pi))
+    rls.w .+= k * e
+    rls.P = (rls.P - k * x' * rls.P) / rls.lambda
+    return e, y
+end
+
+function rls_filter(signal::Vector{T}, desired::Vector{T}; order::Int=32, lambda::Float64=0.99) where {T<:Number}
+    n = length(signal)
+    rls = RLSFilter(order, lambda=lambda)
+    output = zeros(Float64, n)
+    error = zeros(Float64, n)
+
+    for i in (order+1):n
+        x = Float64.(signal[i-order+1:i])
+        e, y = rls_filter_step!(rls, x, Float64(desired[i]))
+        output[i] = y
+        error[i] = e
+    end
+
+    return output, error, rls.w
+end
+
 function wiener_filter(signal::Vector{T}, noise::Vector{T}) where {T<:Number}
     S_signal = abs2.(fft(signal))
     S_noise = abs2.(fft(noise))
@@ -226,6 +309,10 @@ function design_pulse_shape(
     end
 
     return h / sum(h)
+end
+
+function design_raised_cosine(symbol_rate::Float64, fs::Float64; rolloff::Float64=0.35, span::Int=8)
+    return design_pulse_shape(symbol_rate, fs, rolloff=rolloff, span=span)
 end
 
 end
