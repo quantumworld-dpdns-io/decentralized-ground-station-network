@@ -1,14 +1,9 @@
 name: Container Build
 on:
   push:
-    branches: [main, develop]
-    paths:
-      - 'deployments/docker/**'
-      - 'src/backend/**'
-      - 'src/frontend/**'
-      - 'src/crypto-kernel/**'
-      - 'src/quantum-engine/**'
-      - 'src/signal-processing/**'
+    branches: [main]
+  pull_request:
+    branches: [main]
   workflow_dispatch:
 
 concurrency:
@@ -17,7 +12,6 @@ concurrency:
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_TAG: ${{ github.sha }}
 
 jobs:
   build:
@@ -61,8 +55,8 @@ jobs:
           tags: |
             type=sha,prefix=${{ matrix.service.name }}-
             type=ref,event=branch,prefix=${{ matrix.service.name }}-
+            type=semver,pattern={{version}},prefix=${{ matrix.service.name }}-
             type=raw,value=${{ matrix.service.name }}-latest
-            type=raw,value=${{ matrix.service.name }}-${{ github.sha }}
       - name: Build and push
         uses: docker/build-push-action@v6
         with:
