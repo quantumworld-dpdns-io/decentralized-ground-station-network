@@ -1,0 +1,36 @@
+{
+  "name": "@dgsn/crypto-kernel-wasm",
+  "version": "0.1.0",
+  "description": "DGSN Crypto Kernel WASM bindings – post-quantum cryptography, receipt verification, and zero-knowledge proof validation for the Decentralized Ground Station Network",
+  "main": "dgsn_crypto_kernel.js",
+  "types": "dgsn_crypto_kernel.d.ts",
+  "files": [
+    "dgsn_crypto_kernel_bg.wasm",
+    "dgsn_crypto_kernel.js",
+    "dgsn_crypto_kernel.d.ts",
+    "dgsn_crypto_kernel_bg.wasm.d.ts"
+  ],
+  "keywords": [
+    "post-quantum",
+    "cryptography",
+    "kyber",
+    "dilithium",
+    "sphincs",
+    "zero-knowledge",
+    "wasm",
+    "ground-station",
+    "satellite"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/decentralized-ground-station-network.git"
+  },
+  "license": "MIT",
+  "homepage": "https://dgsn.io",
+  "bugs": {
+    "url": "https://github.com/decentralized-ground-station-network/issues"
+  },
+  "engines": {
+    "node": ">= 18.0.0"
+  }
+}

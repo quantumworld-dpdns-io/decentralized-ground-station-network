@@ -1,178 +1,65 @@
 name: Robot Framework Tests
-
 on:
   push:
-    branches: [main, dev]
-    paths:
-      - "tests/**"
-      - "src/backend/**"
-      - "src/frontend/**"
-      - ".github/workflows/robot-framework.yml"
+    branches: [main, develop]
+    paths: ['tests/robot-framework/**', 'src/backend/**']
   pull_request:
-    paths:
-      - "tests/**"
-      - "src/backend/**"
-      - "src/frontend/**"
+    branches: [main]
+    paths: ['tests/robot-framework/**', 'src/backend/**']
+  schedule:
+    - cron: '0 2 * * *'
   workflow_dispatch:
-    inputs:
-      test_suite:
-        description: "Test suite to run"
-        type: choice
-        options:
-          - all
-          - api
-          - web
-          - integration
-          - regression
-        default: all
-      target_environment:
-        description: "Target environment"
-        type: choice
-        options:
-          - local
-          - staging
-          - production
-        default: staging
 
 concurrency:
-  group: robot-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 env:
-  PYTHON_VERSION: "3.12"
-  ROBOT_DIR: tests/robot
-  RESULTS_DIR: robot-results
-  API_URL: ${{ vars.API_URL || 'http://localhost:8080' }}
+  ROBOT_DIR: tests/robot-framework
 
 jobs:
-  robot-tests:
-    name: Robot Framework E2E Tests
+  robot:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
-
-    services:
-      postgres:
-        image: postgres:16-alpine
-        env:
-          POSTGRES_DB: dgsn_test
-          POSTGRES_USER: dgsn_test
-          POSTGRES_PASSWORD: dgsn_test
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd pg_isready -U dgsn_test
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-
-      redis:
-        image: redis:7-alpine
-        ports:
-          - 6379:6379
-        options: >-
-          --health-cmd "redis-cli ping"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-
+    defaults:
+      run:
+        working-directory: ${{ env.ROBOT_DIR }}
     steps:
       - uses: actions/checkout@v4
-
       - uses: actions/setup-python@v5
         with:
-          python-version: ${{ env.PYTHON_VERSION }}
-          cache: pip
-
-      - name: Install Robot Framework
+          python-version: '3.12'
+      - name: Install deps
         run: |
-          pip install robotframework robotframework-seleniumlibrary robotframework-requests robotframework-databaselibrary robotframework-jsonlibrary robotframework-faker
-
-      - name: Install browser drivers
+          pip install robotframework robotframework-seleniumlibrary robotframework-requests \
+            robotframework-sshlibrary robotframework-databaselibrary \
+            robotframework-jsonlibrary robotframework-archivelibrary \
+            robotframework-faker
+      - name: Start backend
         run: |
-          pip install webdrivermanager
-          webdrivermanager firefox chrome --linkpath /usr/local/bin
-          which geckodriver || true
-          which chromedriver || true
-
-      - name: Install application dependencies
-        working-directory: src/backend
+          cd ../../src/backend
+          go run ./cmd/server &
+          sleep 5
+          echo "Backend started"
+      - name: Run OWASP test suites
         run: |
-          go mod download
-          go build -o /tmp/dgsn-server ./cmd/dgsn-server/
-
-      - name: Start backend server
-        env:
-          DGSN_ENV: test
-          DGSN_DATABASE_DSN: postgres://dgsn_test:dgsn_test@localhost:5432/dgsn_test?sslmode=disable
-          DGSN_REDIS_ADDR: localhost:6379
-          DGSN_GRPC_PORT: 9090
-          DGSN_HTTP_PORT: 8080
+          robot --outputdir results --variable BROWSER:headlesschrome \
+            --include owasp --name "OWASP Security Suite" \
+            owasp_suites/
+      - name: Run API tests
         run: |
-          /tmp/dgsn-server &
-          sleep 3
-          echo "Server PID: $!"
-
-      - name: Health check
+          robot --outputdir results --include api --name "API Test Suite" \
+            api_tests/
+      - name: Run integration tests
         run: |
-          for i in {1..10}; do
-            if curl -s http://localhost:8080/healthz | grep -q "ok"; then
-              echo "Server is healthy"
-              break
-            fi
-            echo "Waiting for server... ($i/10)"
-            sleep 2
-          done
-
-      - name: Run Robot Framework tests
-        working-directory: ${{ github.workspace }}
-        env:
-          API_URL: ${{ env.API_URL }}
-          ROBOT_TEST_SUITE: ${{ github.event.inputs.test_suite || 'all' }}
-          TARGET_ENV: ${{ github.event.inputs.target_environment || 'local' }}
-        run: |
-          mkdir -p ${{ env.RESULTS_DIR }}
-
-          if [ "${{ github.event.inputs.test_suite }}" = "all" ] || [ -z "${{ github.event.inputs.test_suite }}" ]; then
-            robot \
-              --outputdir ${{ env.RESULTS_DIR }} \
-              --variable API_URL:${{ env.API_URL }} \
-              --variable BROWSER:headlesschrome \
-              --variable ENV:${{ github.event.inputs.target_environment || 'local' }} \
-              --loglevel INFO \
-              ${{ env.ROBOT_DIR }}/
-          else
-            robot \
-              --outputdir ${{ env.RESULTS_DIR }} \
-              --variable API_URL:${{ env.API_URL }} \
-              --variable BROWSER:headlesschrome \
-              --variable ENV:${{ github.event.inputs.target_environment || 'local' }} \
-              --loglevel INFO \
-              --include ${{ github.event.inputs.test_suite }} \
-              ${{ env.ROBOT_DIR }}/
-          fi
-
-      - name: Upload test results
-        if: always()
+          robot --outputdir results --name "Integration Test Suite" \
+            integration/
+      - name: Upload results
         uses: actions/upload-artifact@v4
         with:
-          name: robot-framework-results-${{ github.sha }}
-          path: ${{ env.RESULTS_DIR }}/
-          retention-days: 30
-
-      - name: Generate test report summary
-        if: always()
-        run: |
-          if [ -f "${{ env.RESULTS_DIR }}/output.xml" ]; then
-            python -c "
-            import xml.etree.ElementTree as ET
-            tree = ET.parse('${{ env.RESULTS_DIR }}/output.xml')
-            root = tree.getroot()
-            stats = root.find('.//statistics')
-            total = stats.findall('.//stat')[0]
-            print(f'Total: {total.get(\"pass\")} passed, {total.get(\"fail\")} failed')
-            "
-          fi
-
-      - name: Stop backend
-        if: always()
-        run: pkill dgsn-server || true
+          name: robot-results
+          path: ${{ env.ROBOT_DIR }}/results/
+      - name: Publish report
+        uses: joonvena/robotframework-reporter-action@v2
+        with:
+          report_path: ${{ env.ROBOT_DIR }}/results
+          github_token: ${{ secrets.GITHUB_TOKEN }}
