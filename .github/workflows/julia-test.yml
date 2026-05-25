@@ -1,11 +1,9 @@
 name: Julia Test
 on:
   push:
-    branches: [main, develop]
-    paths: ['src/signal-processing/**', '**/Project.toml']
+    branches: [main]
   pull_request:
     branches: [main]
-    paths: ['src/signal-processing/**', '**/Project.toml']
   workflow_dispatch:
 
 concurrency:
@@ -14,13 +12,13 @@ concurrency:
 
 env:
   WORKING_DIR: src/signal-processing
+  JULIA_VERSION: '1.10'
 
 jobs:
   test:
     strategy:
       matrix:
-        os: [ubuntu-latest]
-        julia-version: ['1.10', '1.11']
+        os: [ubuntu-latest, macos-latest]
     runs-on: ${{ matrix.os }}
     defaults:
       run:
@@ -29,15 +27,19 @@ jobs:
       - uses: actions/checkout@v4
       - uses: julia-actions/setup-julia@v2
         with:
-          version: ${{ matrix.julia-version }}
+          version: ${{ env.JULIA_VERSION }}
       - uses: julia-actions/cache@v2
-      - name: Run tests
+      - name: Run Pkg tests
         uses: julia-actions/julia-test@v1
         with:
           prefix: 'using Pkg; Pkg.activate(".");'
-      - name: Test coverage
-        uses: julia-actions/julia-processcoverage@v1
+      - name: Run DSP-specific tests
+        run: julia -e 'using Pkg; Pkg.activate("."); Pkg.test(test_args=["dsp"])'
+      - name: Integration tests with signal files
+        run: julia -e 'using Pkg; Pkg.activate("."); Pkg.test(test_args=["integration"])'
       - name: Upload coverage
+        uses: julia-actions/julia-processcoverage@v1
+      - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v4
         with:
           files: lcov.info
