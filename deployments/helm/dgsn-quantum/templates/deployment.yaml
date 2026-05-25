@@ -6,24 +6,28 @@ metadata:
     {{- include "dgsn-quantum.labels" . | nindent 4 }}
 spec:
   replicas: {{ .Values.replicaCount }}
-  strategy:
-    type: RollingUpdate
   selector:
     matchLabels:
       {{- include "dgsn-quantum.selectorLabels" . | nindent 6 }}
   template:
     metadata:
-      labels:
-        {{- include "dgsn-quantum.labels" . | nindent 8 }}
       annotations:
-        prometheus.io/scrape: "true"
-        prometheus.io/port: "{{ .Values.service.metricsPort }}"
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+        {{- with .Values.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      labels:
+        {{- include "dgsn-quantum.selectorLabels" . | nindent 8 }}
     spec:
-      serviceAccountName: {{ .Values.serviceAccount.name }}
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "dgsn-quantum.serviceAccountName" . }}
       securityContext:
         {{- toYaml .Values.podSecurityContext | nindent 8 }}
       containers:
-        - name: quantum
+        - name: {{ .Chart.Name }}
           securityContext:
             {{- toYaml .Values.securityContext | nindent 12 }}
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
@@ -33,47 +37,71 @@ spec:
               containerPort: {{ .Values.service.port }}
               protocol: TCP
             - name: metrics
-              containerPort: {{ .Values.service.metricsPort }}
+              containerPort: 9090
               protocol: TCP
           env:
-            - name: DGSN_ENVIRONMENT
-              value: {{ .Values.config.environment | quote }}
-            - name: DGSN_SIMULATOR
-              value: {{ .Values.config.simulator | quote }}
-            - name: DGSN_QUANTUM_BACKEND
-              value: {{ .Values.config.backend | quote }}
-            - name: DGSN_MAX_SHOTS
-              value: {{ .Values.config.maxShots | quote }}
-            - name: DGSN_MAX_QUBITS
-              value: {{ .Values.config.maxQubits | quote }}
-            - name: DGSN_OPTIMIZATION_LEVEL
-              value: {{ .Values.config.optimizationLevel | quote }}
-            - name: DGSN_ERROR_MITIGATION
-              value: {{ .Values.config.errorMitigation | quote }}
-            - name: DGSN_QAOA_LAYERS
-              value: {{ .Values.config.qaoa.defaultLayers | quote }}
-            - name: DGSN_QAOA_ITERATIONS
-              value: {{ .Values.config.qaoa.maxIterations | quote }}
-            - name: DGSN_VQE_ANSATZ
-              value: {{ .Values.config.vqe.defaultAnsatz | quote }}
-            - name: DGSN_VQE_ITERATIONS
-              value: {{ .Values.config.vqe.maxIterations | quote }}
-            - name: DGSN_OTLP_ENDPOINT
-              value: {{ .Values.config.telemetry.otlpEndpoint | quote }}
-          resources:
-            {{- toYaml .Values.resources | nindent 12 }}
+            {{- range $key, $value := .Values.env }}
+            - name: {{ $key }}
+              value: {{ $value | quote }}
+            {{- end }}
+            - name: QISKIT_BACKEND
+              value: {{ .Values.qiskit.backend | quote }}
+            - name: QISKIT_SHOTS
+              value: {{ .Values.qiskit.shots | quote }}
+            - name: QISKIT_OPTIMIZATION_LEVEL
+              value: {{ .Values.qiskit.optimization_level | quote }}
+            - name: QUANTUM_MAX_JOB_QUEUE_SIZE
+              value: {{ .Values.quantum.maxJobQueueSize | quote }}
+            - name: QUANTUM_MAX_CONCURRENT_JOBS
+              value: {{ .Values.quantum.maxConcurrentJobs | quote }}
+            - name: QUANTUM_JOB_TIMEOUT
+              value: {{ .Values.quantum.jobTimeout | quote }}
+            - name: QUANTUM_ENABLE_QPU
+              value: {{ .Values.quantum.enableQPU | quote }}
+            {{- if .Values.quantum.enableQPU }}
+            - name: QUANTUM_QPU_PROVIDER
+              value: {{ .Values.quantum.qpuProvider | quote }}
+            - name: QUANTUM_QPU_BACKEND
+              value: {{ .Values.quantum.qpuBackend | quote }}
+            {{- end }}
+          envFrom:
+            - secretRef:
+                name: {{ include "dgsn-quantum.fullname" . }}-env
           livenessProbe:
             grpc:
               port: {{ .Values.service.port }}
-            initialDelaySeconds: 30
-            periodSeconds: 30
+            initialDelaySeconds: 60
+            periodSeconds: 15
+            timeoutSeconds: 10
+            failureThreshold: 5
           readinessProbe:
             grpc:
               port: {{ .Values.service.port }}
-            initialDelaySeconds: 15
+            initialDelaySeconds: 30
             periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          volumeMounts:
+            - name: qiskit-config
+              mountPath: /app/qiskit
+              readOnly: true
+            - name: shm
+              mountPath: /dev/shm
+      volumes:
+        - name: qiskit-config
+          configMap:
+            name: {{ include "dgsn-quantum.fullname" . }}-config
+        - name: shm
+          emptyDir:
+            medium: Memory
       {{- with .Values.nodeSelector }}
       nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
         {{- toYaml . | nindent 8 }}
       {{- end }}
       {{- with .Values.tolerations }}
