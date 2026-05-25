@@ -153,13 +153,6 @@ impl Default for Kdf {
     }
 }
 
-impl Zeroize for Kdf {
-    fn zeroize(&mut self) {
-        self.salt.zeroize();
-        self.info.zeroize();
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
