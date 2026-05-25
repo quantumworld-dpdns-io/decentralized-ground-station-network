@@ -10,7 +10,6 @@ description = "Post-quantum cryptographic kernel for DGSN proof-of-reception"
 rust-version = "1.78"
 
 [dependencies]
-liboqs-sys = { git = "https://github.com/open-quantum-safe/liboqs-rust", optional = true }
 rand = "0.8"
 rand_chacha = "0.3"
 blake3 = "1.5"
@@ -31,6 +30,6 @@ js-sys = { version = "0.3", optional = true }
 wasm-bindgen-futures = { version = "0.4", optional = true }
 
 [features]
-default = ["pqc"]
-pqc = ["liboqs-sys"]
+default = ["liboqs"]
+liboqs = []
 wasm = ["wasm-bindgen", "js-sys", "wasm-bindgen-futures", "getrandom"]
