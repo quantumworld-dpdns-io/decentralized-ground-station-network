@@ -1,170 +1,21 @@
 apiVersion: cilium.io/v2
 kind: CiliumNetworkPolicy
 metadata:
-  name: "dgsn-zero-trust"
+  name: "dgsn-default-deny"
   namespace: dgsn
 specs:
-  - description: "Backend API ingress from frontend"
-    endpointSelector:
-      matchLabels:
-        app: dgsn-backend
-    ingress:
-      - fromEndpoints:
-          - matchLabels:
-              app: dgsn-frontend
-        toPorts:
-          - ports:
-              - port: "8080"
-                protocol: TCP
-              - port: "9090"
-                protocol: TCP
-
-  - description: "Crypto kernel gRPC access from backend only"
-    endpointSelector:
-      matchLabels:
-        app: dgsn-crypto-kernel
-    ingress:
-      - fromEndpoints:
-          - matchLabels:
-              app: dgsn-backend
-        toPorts:
-          - ports:
-              - port: "50050"
-                protocol: TCP
-
-  - description: "Quantum engine gRPC access from backend"
-    endpointSelector:
-      matchLabels:
-        app: dgsn-quantum-engine
-    ingress:
-      - fromEndpoints:
-          - matchLabels:
-              app: dgsn-backend
-        toPorts:
-          - ports:
-              - port: "50051"
-                protocol: TCP
-
-  - description: "Signal processing gRPC access from backend"
-    endpointSelector:
-      matchLabels:
-        app: dgsn-signal-processing
-    ingress:
-      - fromEndpoints:
-          - matchLabels:
-              app: dgsn-backend
-        toPorts:
-          - ports:
-              - port: "50052"
-                protocol: TCP
-
-  - description: "Redis access from backend, quantum, signal"
-    endpointSelector:
-      matchLabels:
-        app: dgsn-redis
-    ingress:
-      - fromEndpoints:
-          - matchLabels:
-              app: dgsn-backend
-          - matchLabels:
-              app: dgsn-quantum-engine
-          - matchLabels:
-              app: dgsn-signal-processing
-        toPorts:
-          - ports:
-              - port: "6379"
-                protocol: TCP
-
-  - description: "PostgreSQL access from backend only"
-    endpointSelector:
-      matchLabels:
-        app: dgsn-postgres
-    ingress:
-      - fromEndpoints:
-          - matchLabels:
-              app: dgsn-backend
-        toPorts:
-          - ports:
-              - port: "5432"
-                protocol: TCP
-
-  - description: "Otel collector ingress from all services"
-    endpointSelector:
-      matchLabels:
-        app: dgsn-otel-collector
-    ingress:
-      - fromEndpoints:
-          - matchLabels:
-              app: dgsn-backend
-          - matchLabels:
-              app: dgsn-crypto-kernel
-          - matchLabels:
-              app: dgsn-quantum-engine
-          - matchLabels:
-              app: dgsn-signal-processing
-          - matchLabels:
-              app: dgsn-frontend
-        toPorts:
-          - ports:
-              - port: "4317"
-                protocol: TCP
-              - port: "4318"
-                protocol: TCP
-
-  - description: "Prometheus scraping from monitoring"
-    endpointSelector:
-      matchLabels:
-        app: dgsn-prometheus
-    ingress:
-      - fromEndpoints:
-          - matchLabels:
-              app: dgsn-otel-collector
-        toPorts:
-          - ports:
-              - port: "9090"
-                protocol: TCP
-
-  - description: "Grafana ingress from frontend and monitoring"
-    endpointSelector:
-      matchLabels:
-        app: dgsn-grafana
-    ingress:
-      - fromEndpoints:
-          - matchLabels:
-              app: dgsn-frontend
-        toPorts:
-          - ports:
-              - port: "3000"
-                protocol: TCP
-
-  - description: "Deny all other ingress (default deny)"
+  - description: "Default deny all ingress and egress"
     endpointSelector:
       matchLabels: {}
     ingress:
       - fromEndpoints:
           - matchLabels:
               reserved:host
+    egress: []
     ingressDeny:
       - fromEndpoints:
           - matchLabels:
               reserved:world
-      - fromEndpoints:
-          - matchLabels:
-              reserved:init
-
-  - description: "Egress: allow DNS only"
-    endpointSelector:
-      matchLabels: {}
-    egress:
-      - toEndpoints:
-          - matchLabels:
-              io.cilium.k8s.kube-system: kube-dns
-        toPorts:
-          - ports:
-              - port: "53"
-                protocol: UDP
-              - port: "53"
-                protocol: TCP
     egressDeny:
       - toCIDR:
           - 0.0.0.0/0
@@ -175,14 +26,148 @@ specs:
           - 100.64.0.0/10
 ---
 apiVersion: cilium.io/v2
-kind: CiliumClusterwideNetworkPolicy
+kind: CiliumNetworkPolicy
 metadata:
-  name: "dgsn-egress-redis"
+  name: "dgsn-backend-ingress"
+  namespace: dgsn
 spec:
+  description: "Allow frontend to backend on port 8080"
   endpointSelector:
     matchLabels:
       app: dgsn-backend
+  ingress:
+    - fromEndpoints:
+        - matchLabels:
+            app: dgsn-frontend
+      toPorts:
+        - ports:
+            - port: "8080"
+              protocol: TCP
   egress:
+    - toEndpoints:
+        - matchLabels:
+            app: dgsn-crypto-kernel
+      toPorts:
+        - ports:
+            - port: "50051"
+              protocol: TCP
+    - toEndpoints:
+        - matchLabels:
+            app: dgsn-quantum-engine
+      toPorts:
+        - ports:
+            - port: "50052"
+              protocol: TCP
+    - toEndpoints:
+        - matchLabels:
+            app: dgsn-signal-processing
+      toPorts:
+        - ports:
+            - port: "50053"
+              protocol: TCP
+    - toEndpoints:
+        - matchLabels:
+            k8s-app: kube-dns
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: UDP
+    - toEndpoints:
+        - matchLabels:
+            app: dgsn-redis
+      toPorts:
+        - ports:
+            - port: "6379"
+              protocol: TCP
+    - toEndpoints:
+        - matchLabels:
+            app: dgsn-postgresql
+      toPorts:
+        - ports:
+            - port: "5432"
+              protocol: TCP
+    - toEndpoints:
+        - matchLabels:
+            app: dgsn-otel-collector
+      toPorts:
+        - ports:
+            - port: "4317"
+              protocol: TCP
+    - toEndpoints:
+        - matchLabels:
+            app: dgsn-prometheus
+      toPorts:
+        - ports:
+            - port: "9090"
+              protocol: TCP
+---
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: "dgsn-crypto-kernel-ingress"
+  namespace: dgsn
+spec:
+  description: "Allow backend to crypto kernel on port 50051"
+  endpointSelector:
+    matchLabels:
+      app: dgsn-crypto-kernel
+  ingress:
+    - fromEndpoints:
+        - matchLabels:
+            app: dgsn-backend
+      toPorts:
+        - ports:
+            - port: "50051"
+              protocol: TCP
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            app: dgsn-otel-collector
+      toPorts:
+        - ports:
+            - port: "4317"
+              protocol: TCP
+    - toEndpoints:
+        - matchLabels:
+            k8s-app: kube-dns
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: UDP
+---
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: "dgsn-quantum-engine-ingress"
+  namespace: dgsn
+spec:
+  description: "Allow backend to quantum engine on port 50052"
+  endpointSelector:
+    matchLabels:
+      app: dgsn-quantum-engine
+  ingress:
+    - fromEndpoints:
+        - matchLabels:
+            app: dgsn-backend
+      toPorts:
+        - ports:
+            - port: "50052"
+              protocol: TCP
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            app: dgsn-otel-collector
+      toPorts:
+        - ports:
+            - port: "4317"
+              protocol: TCP
+    - toEndpoints:
+        - matchLabels:
+            k8s-app: kube-dns
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: UDP
     - toEndpoints:
         - matchLabels:
             app: dgsn-redis
@@ -192,18 +177,125 @@ spec:
               protocol: TCP
 ---
 apiVersion: cilium.io/v2
-kind: CiliumClusterwideNetworkPolicy
+kind: CiliumNetworkPolicy
 metadata:
-  name: "dgsn-egress-postgres"
+  name: "dgsn-signal-processing-ingress"
+  namespace: dgsn
 spec:
+  description: "Allow backend to signal processing on port 50053"
+  endpointSelector:
+    matchLabels:
+      app: dgsn-signal-processing
+  ingress:
+    - fromEndpoints:
+        - matchLabels:
+            app: dgsn-backend
+      toPorts:
+        - ports:
+            - port: "50053"
+              protocol: TCP
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            app: dgsn-otel-collector
+      toPorts:
+        - ports:
+            - port: "4317"
+              protocol: TCP
+    - toEndpoints:
+        - matchLabels:
+            k8s-app: kube-dns
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: UDP
+---
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: "dgsn-monitoring-ingress"
+  namespace: dgsn
+spec:
+  description: "Allow prometheus scraping on port 9090"
+  endpointSelector:
+    matchLabels:
+      app: dgsn-prometheus
+  ingress:
+    - fromEndpoints:
+        - matchLabels:
+            app: dgsn-otel-collector
+      toPorts:
+        - ports:
+            - port: "9090"
+              protocol: TCP
+    - fromEndpoints:
+        - matchLabels:
+            app: dgsn-grafana
+      toPorts:
+        - ports:
+            - port: "9090"
+              protocol: TCP
+---
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: "dgsn-egress-dns"
+  namespace: dgsn
+spec:
+  description: "Allow DNS egress for all pods"
+  endpointSelector:
+    matchLabels: {}
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            k8s-app: kube-dns
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: UDP
+            - port: "53"
+              protocol: TCP
+---
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: "dgsn-egress-ntp"
+  namespace: dgsn
+spec:
+  description: "Allow NTP egress for time sync"
   endpointSelector:
     matchLabels:
       app: dgsn-backend
   egress:
-    - toEndpoints:
-        - matchLabels:
-            app: dgsn-postgres
+    - toEntities:
+        - world
       toPorts:
         - ports:
-            - port: "5432"
+            - port: "123"
+              protocol: UDP
+---
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: "dgsn-frontend-egress"
+  namespace: dgsn
+spec:
+  description: "Allow frontend to backend API"
+  endpointSelector:
+    matchLabels:
+      app: dgsn-frontend
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            app: dgsn-backend
+      toPorts:
+        - ports:
+            - port: "8080"
               protocol: TCP
+    - toEndpoints:
+        - matchLabels:
+            k8s-app: kube-dns
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: UDP

@@ -1,9 +1,150 @@
 groups:
-  - name: dgsn-ground-station-alerts
+  - name: dgsn-security-observability
     interval: 30s
     rules:
 
-      # High-priority: Service Down
+      # HighErrorRate: >5% errors over 5m
+      - alert: DGSN_HighErrorRate
+        expr: |
+          sum(rate(dgsn_api_requests_total{status=~"5.."}[5m]))
+          /
+          sum(rate(dgsn_api_requests_total[5m])) > 0.05
+        for: 5m
+        labels:
+          severity: critical
+          team: dgsn-core
+        annotations:
+          summary: "API error rate exceeds 5%"
+          description: "Error rate is {{ $value | humanizePercentage }} over the last 5 minutes."
+          runbook: "docs/runbooks/incident-response.md"
+
+      # HighLatency: >500ms p99 over 5m
+      - alert: DGSN_HighLatency
+        expr: |
+          histogram_quantile(0.99,
+            sum(rate(dgsn_api_request_duration_seconds_bucket[5m])) by (le)
+          ) > 0.5
+        for: 5m
+        labels:
+          severity: warning
+          team: dgsn-core
+        annotations:
+          summary: "p99 API latency exceeds 500ms"
+          description: "p99 latency is {{ $value }}s over the last 5 minutes."
+
+      # LowUptime: <99% over 1h
+      - alert: DGSN_LowUptime
+        expr: |
+          avg_over_time(up[1h]) < 0.99
+        for: 5m
+        labels:
+          severity: critical
+          team: dgsn-infra
+        annotations:
+          summary: "Service uptime below 99%"
+          description: "Uptime is {{ $value | humanizePercentage }} over the last hour."
+
+      # QuantumCircuitFailure: >10% failure rate
+      - alert: DGSN_QuantumCircuitFailure
+        expr: |
+          sum(rate(dgsn_quantum_errors_total[5m])) /
+          sum(rate(dgsn_quantum_circuits_total[5m])) > 0.10
+        for: 2m
+        labels:
+          severity: critical
+          team: dgsn-quantum
+        annotations:
+          summary: "Quantum circuit failure rate exceeds 10%"
+          description: "Failure rate is {{ $value | humanizePercentage }} over 5 minutes."
+          runbook: "docs/runbooks/incident-response.md"
+
+      # PQCSignatureFailure: any failure
+      - alert: DGSN_PQCSignatureFailure
+        expr: |
+          dgsn_crypto_verify_failures_total > 0
+        for: 1m
+        labels:
+          severity: critical
+          team: dgsn-core
+        annotations:
+          summary: "PQC signature verification failure detected"
+          description: "Post-quantum signature verification failed on {{ $labels.instance }}."
+          runbook: "docs/runbooks/pqc-key-rotation.md"
+
+      # CertificateExpiringSoon: <30 days
+      - alert: DGSN_CertificateExpiringSoon
+        expr: |
+          dgsn_tls_cert_expiry_days < 30
+        for: 1h
+        labels:
+          severity: warning
+          team: dgsn-infra
+        annotations:
+          summary: "TLS certificate expiring in {{ $value }} days"
+          description: "Certificate {{ $labels.name }} expires in {{ $value }} days."
+          runbook: "docs/runbooks/pqc-key-rotation.md"
+
+      - alert: DGSN_CertificateExpiringCritical
+        expr: |
+          dgsn_tls_cert_expiry_days < 7
+        for: 1h
+        labels:
+          severity: critical
+          team: dgsn-infra
+        annotations:
+          summary: "TLS certificate expiring critically"
+          description: "Certificate {{ $labels.name }} expires in {{ $value }} days."
+
+      # HighMemoryUsage: >85%
+      - alert: DGSN_HighMemoryUsage
+        expr: |
+          (1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) * 100 > 85
+        for: 5m
+        labels:
+          severity: warning
+          team: dgsn-infra
+        annotations:
+          summary: "Node memory usage exceeds 85%"
+          description: "Memory usage on {{ $labels.instance }} is {{ $value }}%."
+
+      # HighCPUUsage: >90%
+      - alert: DGSN_HighCPUUsage
+        expr: |
+          100 - avg by(instance) (rate(node_cpu_seconds_total{mode="idle"}[5m])) > 90
+        for: 10m
+        labels:
+          severity: warning
+          team: dgsn-infra
+        annotations:
+          summary: "Node CPU usage exceeds 90%"
+          description: "CPU usage on {{ $labels.instance }} is {{ $value }}%."
+
+      # DiskSpaceLow: <10% free
+      - alert: DGSN_DiskSpaceLow
+        expr: |
+          (node_filesystem_avail_bytes{mountpoint="/"} / node_filesystem_size_bytes{mountpoint="/"}) * 100 < 10
+        for: 5m
+        labels:
+          severity: critical
+          team: dgsn-infra
+        annotations:
+          summary: "Disk space below 10% free"
+          description: "Disk on {{ $labels.instance }} has {{ $value }}% free."
+
+      # ReceiptVerificationFailure: >1% failure
+      - alert: DGSN_ReceiptVerificationFailure
+        expr: |
+          sum(rate(dgsn_receipts_verify_success_total[5m])) /
+          sum(rate(dgsn_receipts_verify_total[5m])) < 0.99
+        for: 2m
+        labels:
+          severity: critical
+          team: dgsn-core
+        annotations:
+          summary: "Receipt verification success rate below 99%"
+          description: "Verification rate is {{ $value | humanizePercentage }} over 5 minutes."
+
+      # Service Down
       - alert: DGSN_ServiceDown
         expr: up == 0
         for: 1m
@@ -15,162 +156,7 @@ groups:
           description: "{{ $labels.service }} has been unreachable for more than 1 minute."
           runbook: "docs/runbooks/incident-response.md"
 
-      # High-priority: Crypto Kernel
-      - alert: DGSN_CryptoKernelHighErrorRate
-        expr: rate(dgsn_crypto_errors_total[5m]) > 10
-        for: 2m
-        labels:
-          severity: critical
-          team: dgsn-core
-        annotations:
-          summary: "Crypto kernel error rate spike"
-          description: "Crypto kernel error rate is {{ $value }}/s for the last 5 minutes."
-          runbook: "docs/runbooks/pqc-key-rotation.md"
-
-      - alert: DGSN_KeyGenerationFailure
-        expr: dgsn_crypto_keygen_failures_total > 0
-        for: 1m
-        labels:
-          severity: critical
-          team: dgsn-core
-        annotations:
-          summary: "PQC key generation failure"
-          description: "Post-quantum key generation failed on {{ $labels.instance }}."
-
-      - alert: DGSN_SignatureVerificationFailure
-        expr: rate(dgsn_crypto_verify_failures_total[5m]) > 5
-        for: 2m
-        labels:
-          severity: warning
-          team: dgsn-core
-        annotations:
-          summary: "Signature verification failures"
-          description: "Receipt signature verification failures at {{ $value }}/s."
-
-      # Medium-priority: Quantum Engine
-      - alert: DGSN_QuantumCircuitTimeout
-        expr: dgsn_quantum_circuit_duration_seconds > 300
-        for: 1m
-        labels:
-          severity: warning
-          team: dgsn-quantum
-        annotations:
-          summary: "Quantum circuit optimization timeout"
-          description: "Circuit {{ $labels.circuit_id }} has been running for {{ $value }}s."
-
-      - alert: DGSN_QuantumErrorRate
-        expr: rate(dgsn_quantum_errors_total[5m]) > 5
-        for: 2m
-        labels:
-          severity: warning
-          team: dgsn-quantum
-        annotations:
-          summary: "Quantum engine error rate elevated"
-          description: "Error rate: {{ $value }}/s"
-
-      # Medium-priority: Signal Processing
-      - alert: DGSN_SignalProcessingLatency
-        expr: histogram_quantile(0.95, rate(dgsn_signal_process_duration_seconds_bucket[5m])) > 10
-        for: 5m
-        labels:
-          severity: warning
-          team: dgsn-signal
-        annotations:
-          summary: "Signal processing p95 latency > 10s"
-          description: "P95 signal processing latency is {{ $value }}s."
-
-      - alert: DGSN_SignalProcessingBacklog
-        expr: dgsn_signal_queue_depth > 1000
-        for: 2m
-        labels:
-          severity: warning
-          team: dgsn-signal
-        annotations:
-          summary: "Signal processing queue backlog"
-          description: "Queue depth is {{ $value }} items."
-
-      # Medium-priority: Backend API
-      - alert: DGSN_APIHighLatency
-        expr: histogram_quantile(0.95, rate(dgsn_api_request_duration_seconds_bucket[5m])) > 5
-        for: 5m
-        labels:
-          severity: warning
-          team: dgsn-backend
-        annotations:
-          summary: "API p95 latency > 5s"
-          description: "P95 latency is {{ $value }}s for {{ $labels.route }}."
-
-      - alert: DGSN_APIErrorRate
-        expr: rate(dgsn_api_requests_total{status=~"5.."}[5m]) / rate(dgsn_api_requests_total[5m]) > 0.05
-        for: 2m
-        labels:
-          severity: critical
-          team: dgsn-backend
-        annotations:
-          summary: "API 5xx error rate > 5%"
-          description: "Error rate is {{ $value | humanizePercentage }}."
-
-      # Low-priority: Infrastructure
-      - alert: DGSN_HighMemoryUsage
-        expr: (1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) * 100 > 90
-        for: 5m
-        labels:
-          severity: warning
-          team: dgsn-infra
-        annotations:
-          summary: "Node memory > 90%"
-          description: "Memory usage on {{ $labels.instance }} is {{ $value }}%."
-
-      - alert: DGSN_HighDiskUsage
-        expr: (1 - (node_filesystem_avail_bytes{mountpoint="/"} / node_filesystem_size_bytes{mountpoint="/"})) * 100 > 85
-        for: 5m
-        labels:
-          severity: warning
-          team: dgsn-infra
-        annotations:
-          summary: "Disk usage > 85%"
-          description: "Disk usage on {{ $labels.instance }} is {{ $value }}%."
-
-      - alert: DGSN_HighCPUUsage
-        expr: 100 - (avg by(instance) (rate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > 80
-        for: 10m
-        labels:
-          severity: warning
-          team: dgsn-infra
-        annotations:
-          summary: "CPU usage > 80%"
-          description: "CPU usage on {{ $labels.instance }} is {{ $value }}%."
-
-      - alert: DGSN_PrometheusTargetMissing
-        expr: up == 0
-        for: 5m
-        labels:
-          severity: critical
-          team: dgsn-infra
-        annotations:
-          summary: "Prometheus target {{ $labels.job }} is down"
-          description: "Target {{ $labels.instance }} has been down for > 5m."
-
-      - alert: DGSN_RedisMemoryHigh
-        expr: dgsn_redis_memory_used_bytes / dgsn_redis_memory_max_bytes > 0.85
-        for: 5m
-        labels:
-          severity: warning
-          team: dgsn-infra
-        annotations:
-          summary: "Redis memory > 85%"
-          description: "Redis {{ $labels.instance }} memory at {{ $value | humanizePercentage }}."
-
-      - alert: DGSN_PostgresConnectionHigh
-        expr: dgsn_postgres_connections_total > 80
-        for: 2m
-        labels:
-          severity: warning
-          team: dgsn-infra
-        annotations:
-          summary: "PostgreSQL connections high"
-          description: "Postgres {{ $labels.instance }} has {{ $value }} active connections."
-
+      # Receipt Chain Validation
       - alert: DGSN_ReceiptChainValidationError
         expr: rate(dgsn_receipt_chain_validation_errors_total[5m]) > 1
         for: 2m
@@ -178,9 +164,10 @@ groups:
           severity: critical
           team: dgsn-core
         annotations:
-          summary: "Receipt chain validation errors"
-          description: "Receipt chain validation failing at {{ $value }}/s. Possible tampering detected."
+          summary: "Receipt chain validation errors detected"
+          description: "Receipt chain validation failing at {{ $value }}/s. Possible tampering."
 
+      # ZKP Verification
       - alert: DGSN_ZKPVerificationFailure
         expr: rate(dgsn_zkp_verification_failures_total[5m]) > 2
         for: 2m
@@ -191,6 +178,41 @@ groups:
           summary: "ZKP verification failures"
           description: "Zero-knowledge proof verification failing at {{ $value }}/s."
 
+      # Signal Processing Backlog
+      - alert: DGSN_SignalProcessingBacklog
+        expr: dgsn_signal_queue_depth > 1000
+        for: 2m
+        labels:
+          severity: warning
+          team: dgsn-signal
+        annotations:
+          summary: "Signal processing queue backlog"
+          description: "Queue depth is {{ $value }} items."
+
+      # PQC Key Generation
+      - alert: DGSN_KeyGenerationFailure
+        expr: dgsn_crypto_keygen_failures_total > 0
+        for: 1m
+        labels:
+          severity: critical
+          team: dgsn-core
+        annotations:
+          summary: "PQC key generation failure"
+          description: "Post-quantum key generation failed on {{ $labels.instance }}."
+          runbook: "docs/runbooks/pqc-key-rotation.md"
+
+      # Redis Memory
+      - alert: DGSN_RedisMemoryHigh
+        expr: dgsn_redis_memory_used_bytes / dgsn_redis_memory_max_bytes > 0.85
+        for: 5m
+        labels:
+          severity: warning
+          team: dgsn-infra
+        annotations:
+          summary: "Redis memory usage exceeds 85%"
+          description: "Redis {{ $labels.instance }} memory at {{ $value | humanizePercentage }}."
+
+      # No Receipts Warning
       - alert: DGSN_NoReceiptsInWindow
         expr: increase(dgsn_receipts_created_total[1h]) == 0
         for: 1h
@@ -200,3 +222,48 @@ groups:
         annotations:
           summary: "No receipts created in last hour"
           description: "No reception receipts created in the past hour."
+
+      # Security: Unauthorized Access
+      - alert: DGSN_UnauthorizedAccessSpike
+        expr: rate(dgsn_unauthorized_access_total[5m]) > 10
+        for: 2m
+        labels:
+          severity: critical
+          team: dgsn-security
+        annotations:
+          summary: "Unauthorized access spike detected"
+          description: "Unauthorized access attempts at {{ $value }}/s."
+          runbook: "docs/runbooks/incident-response.md"
+
+      # Security: Tetragon Violation
+      - alert: DGSN_TetragonViolation
+        expr: rate(dgsn_tetragon_signal_violations_total[5m]) > 5
+        for: 1m
+        labels:
+          severity: critical
+          team: dgsn-security
+        annotations:
+          summary: "Tetragon security policy violation"
+          description: "eBPF policy violations at {{ $value }}/s."
+
+      # Tempo Trace Backlog
+      - alert: DGSN_TempoTraceIngestionLag
+        expr: tempo_ingester_bytes_received_total - tempo_ingester_bytes_compressed_total > 1e9
+        for: 5m
+        labels:
+          severity: warning
+          team: dgsn-infra
+        annotations:
+          summary: "Tempo trace ingestion lagging"
+          description: "Uncompressed trace data backlog exceeds 1GB."
+
+      # Loki Log Throttling
+      - alert: DGSN_LokiRateLimitHit
+        expr: rate(loki_discarded_samples_total{reason="rate_limiting"}[5m]) > 0
+        for: 1m
+        labels:
+          severity: warning
+          team: dgsn-infra
+        annotations:
+          summary: "Loki ingestion rate limit hit"
+          description: "Log samples being discarded due to rate limiting."

@@ -23,6 +23,8 @@ spec:
                 - "/etc/kubernetes"
                 - "/root/.ssh"
                 - "/home/"
+                - "/etc/dgsn/secrets"
+                - "/var/run/secrets/kubernetes.io"
           matchActions:
             - action: Sigkill
               argError: true
@@ -52,6 +54,8 @@ spec:
               operator: In
               values:
                 - "host"
+          matchActions:
+            - action: Post
 
     - call: "sys_bind"
       syscall: true
@@ -89,12 +93,17 @@ spec:
                 - "/usr/local/bin/postgres"
                 - "/bin/sh"
                 - "/bin/bash"
+                - "/bin/ls"
+                - "/usr/bin/curl"
+                - "/usr/bin/wget"
           matchBinaryInPath:
             - operator: "In"
               values:
                 - "/usr/local/bin"
                 - "/usr/bin"
                 - "/bin"
+          matchActions:
+            - action: Sigkill
 
     - call: "security_file_open"
       syscall: false
@@ -108,9 +117,46 @@ spec:
               values:
                 - "/etc/dgsn/secrets"
                 - "/var/run/secrets"
+                - "/etc/dgsn/config"
+                - "/etc/dgsn/policies"
           matchActions:
             - action: Post
             - action: Sigkill
+
+    - call: "sys_unlink"
+      syscall: true
+      args:
+        - index: 0
+          type: string
+      selectors:
+        - matchArgs:
+            - index: 0
+              operator: "Prefix"
+              values:
+                - "/etc/dgsn/"
+                - "/var/lib/dgsn/"
+                - "/data/"
+          matchActions:
+            - action: Post
+            - action: Sigkill
+
+    - call: "sys_rename"
+      syscall: true
+      args:
+        - index: 0
+          type: string
+        - index: 1
+          type: string
+      selectors:
+        - matchArgs:
+            - index: 0
+              operator: "Prefix"
+              values:
+                - "/etc/dgsn/"
+                - "/var/lib/dgsn/"
+                - "/data/"
+          matchActions:
+            - action: Post
 
   processExec:
     matchArgs:
@@ -119,6 +165,7 @@ spec:
         values:
           - "/usr/local/bin/dgsn-server"
           - "/usr/local/bin/dgsn-crypto-cli"
+          - "/usr/local/bin/dgsn-signal-processor"
     matchActions:
       - action: Post
       - action: FollowFD
@@ -128,6 +175,8 @@ spec:
         - "CAP_SYS_ADMIN"
         - "CAP_NET_ADMIN"
         - "CAP_SYS_PTRACE"
+        - "CAP_SYS_RAWIO"
+        - "CAP_DAC_READ_SEARCH"
       matchActions:
         - action: Post
         - action: Sigkill
@@ -141,6 +190,8 @@ spec:
       matchOperations:
         - "read"
         - "write"
+        - "unlink"
+        - "rename"
       matchActions:
         - action: Post
 
@@ -155,5 +206,11 @@ spec:
               - "10.0.0.0/8"
               - "172.16.0.0/12"
               - "192.168.0.0/16"
+              - "100.64.0.0/10"
+        matchActions:
+          - action: Post
+      - matchProtocols:
+          - "tcp"
+          - "udp"
         matchActions:
           - action: Post
