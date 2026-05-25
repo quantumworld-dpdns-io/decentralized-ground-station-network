@@ -1,6 +1,6 @@
-use crate::merkle::MerkleTree;
+use crate::merkle::{MerkleProof, MerkleTree};
 use crate::pqc::{self, Algorithm};
-use crate::zkp::{self, ProofSystem, ProofType, ZkpProof};
+use crate::zkp::{noir::NoirBackend, ProofSystem, ProofType, ZkpProof};
 use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen]
@@ -64,14 +64,20 @@ impl WasmCrypto {
         signature: &[u8],
         public_key: &[u8],
         merkle_root: &[u8],
+        siblings_json: &[u8],
     ) -> Result<JsValue, JsValue> {
         let algorithm = Algorithm::MLDSA65;
         let sig_valid = pqc::verify(&algorithm, receipt_data, signature, public_key)
             .map_err(|e| JsValue::from_str(&e.to_string()))?;
-        let mt = MerkleTree::from_root(merkle_root)
+        let siblings: Vec<Vec<u8>> = serde_json::from_slice(siblings_json)
             .map_err(|e| JsValue::from_str(&e.to_string()))?;
-        let proof_valid = mt.verify_inclusion(receipt_data, merkle_root)
-            .map_err(|e| JsValue::from_str(&e.to_string()))?;
+        let proof = MerkleProof {
+            leaf: receipt_data.to_vec(),
+            leaf_index: 0,
+            siblings,
+            path: vec![true; siblings.len()],
+        };
+        let proof_valid = MerkleTree::verify_proof(&proof, merkle_root);
         let result = js_sys::Object::new();
         js_sys::Reflect::set(
             &result,
@@ -98,31 +104,16 @@ impl WasmCrypto {
 
     pub fn circuit_validate(
         circuit_data: &[u8],
-        public_inputs: JsValue,
+        verifying_key_json: &[u8],
     ) -> Result<JsValue, JsValue> {
-        let inputs_array: js_sys::Array = public_inputs.dyn_into()
-            .map_err(|_| JsValue::from_str("public_inputs must be an array"))?;
-        let mut inputs = Vec::new();
-        for i in 0..inputs_array.length() {
-            let val = inputs_array.get(i);
-            if let Some(arr) = val.dyn_ref::<js_sys::Array>() {
-                let mut inner = Vec::with_capacity(arr.length() as usize);
-                for j in 0..arr.length() {
-                    let byte_val = arr.get(j).as_f64()
-                        .ok_or_else(|| JsValue::from_str("invalid byte value"))? as u8;
-                    inner.push(byte_val);
-                }
-                inputs.push(inner);
-            }
-        }
-        let proof = ZkpProof {
-            proof_type: ProofType::Groth16,
-            proof_data: circuit_data.to_vec(),
-            public_inputs: inputs,
-            system: ProofSystem::Noir,
-            verified: false,
-        };
-        let valid = zkp::verify(&proof)
+        let vk: crate::zkp::noir::NoirVerifyingKey = serde_json::from_slice(verifying_key_json)
+            .map_err(|e| JsValue::from_str(&e.to_string()))?;
+        let proof = ZkpProof::new(
+            ProofSystem::Noir,
+            ProofType::Single(circuit_data.to_vec()),
+            vec![],
+        );
+        let valid = NoirBackend::verify_proof(&vk, &proof, &[])
             .map_err(|e| JsValue::from_str(&e.to_string()))?;
         let result = js_sys::Object::new();
         js_sys::Reflect::set(

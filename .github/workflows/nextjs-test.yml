@@ -1,0 +1,71 @@
+name: Next.js Test
+on:
+  push:
+    branches: [main, develop]
+    paths: ['src/frontend/**', 'package.json']
+  pull_request:
+    branches: [main]
+    paths: ['src/frontend/**', 'package.json']
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  WORKING_DIR: src/frontend
+  NODE_VERSION: '20'
+
+jobs:
+  jest:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ${{ env.WORKING_DIR }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+          cache-dependency-path: ${{ env.WORKING_DIR }}/pnpm-lock.yaml
+      - name: Install deps
+        run: pnpm install --frozen-lockfile
+      - name: Jest tests
+        run: pnpm test:ci -- --coverage
+      - name: Upload coverage
+        uses: codecov/codecov-action@v4
+        with:
+          flags: nextjs
+
+  playwright:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ${{ env.WORKING_DIR }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+          cache-dependency-path: ${{ env.WORKING_DIR }}/pnpm-lock.yaml
+      - name: Install deps
+        run: pnpm install --frozen-lockfile
+      - name: Install Playwright browsers
+        run: pnpm exec playwright install --with-deps chromium
+      - name: Start dev server
+        run: pnpm dev &
+      - name: Run Playwright tests
+        run: pnpm exec playwright test
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-screenshots
+          path: ${{ env.WORKING_DIR }}/playwright-report/
