@@ -13,23 +13,23 @@ spec:
   minReplicas: {{ .Values.autoscaling.minReplicas }}
   maxReplicas: {{ .Values.autoscaling.maxReplicas }}
   metrics:
+    {{- if .Values.autoscaling.targetCPUUtilizationPercentage }}
     - type: Resource
       resource:
         name: cpu
         target:
           type: Utilization
           averageUtilization: {{ .Values.autoscaling.targetCPUUtilizationPercentage }}
-  behavior:
-    scaleUp:
-      stabilizationWindowSeconds: 120
-      policies:
-        - type: Percent
-          value: 50
-          periodSeconds: 60
-    scaleDown:
-      stabilizationWindowSeconds: 600
-      policies:
-        - type: Percent
-          value: 10
-          periodSeconds: 120
+    {{- end }}
+    {{- with .Values.autoscaling.customMetrics }}
+    {{- range . }}
+    - type: Pods
+      pods:
+        metric:
+          name: {{ .name }}
+        target:
+          type: AverageValue
+          averageValue: {{ .targetAverageValue }}
+    {{- end }}
+    {{- end }}
 {{- end }}
