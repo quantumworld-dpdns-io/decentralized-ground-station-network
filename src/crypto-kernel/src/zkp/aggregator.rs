@@ -82,7 +82,7 @@ impl ProofAggregator {
             data
         };
 
-        let aggregated = AggregationProof {
+        let _aggregated = AggregationProof {
             aggregate_proof,
             proof_hashes: proofs.iter().map(|p| {
                 let h = match &p.proof_type {
@@ -104,8 +104,6 @@ impl ProofAggregator {
     }
 
     pub fn verify_batch(batch: &BatchProof) -> ZkpResult<bool> {
-        let start = Instant::now();
-
         if batch.proofs.is_empty() {
             return Ok(false);
         }
