@@ -2,6 +2,7 @@ use crate::pqc::{self, Algorithm};
 use std::ffi::{CStr, CString};
 use std::os::raw::c_char;
 
+#[derive(Clone)]
 #[repr(C)]
 pub struct FfiResult {
     pub success: bool,

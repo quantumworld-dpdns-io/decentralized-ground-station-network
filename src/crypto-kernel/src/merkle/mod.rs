@@ -36,9 +36,9 @@ impl MerkleTree {
         if leaves.is_empty() {
             return Err(crate::CryptoError::MerkleError("cannot build tree from empty leaves".into()));
         }
-        if leaves.len() > 1 << (MAX_HEIGHT - 1) {
+        if leaves.len() > (1usize << (MAX_HEIGHT - 1).min(63)) {
             return Err(crate::CryptoError::MerkleError(
-                format!("too many leaves: max is {}", 1 << (MAX_HEIGHT - 1)),
+                format!("too many leaves: max is {}", 1usize << (MAX_HEIGHT - 1).min(63)),
             ));
         }
 
