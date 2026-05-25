@@ -7,7 +7,11 @@ use zeroize::Zeroize;
 
 const SPHINCS128F_PK_SIZE: usize = 32;
 const SPHINCS128F_SK_SIZE: usize = 65;
+const SPHINCS128F_SIG_SIZE: usize = 17088;
+const SPHINCS192S_PK_SIZE: usize = 48;
 const SPHINCS192S_SK_SIZE: usize = 97;
+const SPHINCS192S_SIG_SIZE: usize = 35664;
+const SPHINCS256F_PK_SIZE: usize = 64;
 const SPHINCS256F_SK_SIZE: usize = 129;
 const SPHINCS256F_SIG_SIZE: usize = 49856;
 
