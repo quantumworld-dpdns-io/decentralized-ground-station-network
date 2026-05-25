@@ -1,0 +1,162 @@
+apiVersion: audit.k8s.io/v1
+kind: Policy
+metadata:
+  name: "dgsn-audit-policy"
+rules:
+  # Log all pod and service access for security audit
+  - level: RequestResponse
+    resources:
+      - group: ""
+        resources:
+          - "pods"
+          - "pods/exec"
+          - "pods/log"
+          - "services"
+          - "secrets"
+          - "configmaps"
+          - "endpoints"
+    verbs: ["create", "update", "patch", "delete", "exec"]
+
+  - level: Metadata
+    resources:
+      - group: ""
+        resources:
+          - "namespaces"
+          - "nodes"
+          - "persistentvolumes"
+          - "persistentvolumeclaims"
+    verbs: ["create", "update", "patch", "delete"]
+
+  - level: Metadata
+    resources:
+      - group: "rbac.authorization.k8s.io"
+        resources:
+          - "roles"
+          - "rolebindings"
+          - "clusterroles"
+          - "clusterrolebindings"
+    verbs: ["create", "update", "patch", "delete"]
+
+  - level: Metadata
+    resources:
+      - group: "networking.k8s.io"
+        resources:
+          - "networkpolicies"
+    verbs: ["create", "update", "patch", "delete"]
+
+  - level: Metadata
+    resources:
+      - group: "cilium.io"
+        resources:
+          - "ciliumnetworkpolicies"
+          - "ciliumclusterwidenetworkpolicies"
+    verbs: ["create", "update", "patch", "delete"]
+
+  - level: Metadata
+    resources:
+      - group: "batch"
+        resources:
+          - "jobs"
+          - "cronjobs"
+    verbs: ["create", "update", "patch", "delete"]
+
+  - level: Metadata
+    resources:
+      - group: "autoscaling"
+        resources:
+          - "horizontalpodautoscalers"
+    verbs: ["create", "update", "patch", "delete"]
+
+  # Log authentication attempts
+  - level: Metadata
+    nonResourceURLs:
+      - "/api*"
+      - "/apis*"
+    verbs: ["get", "list", "watch"]
+
+  # Log failed authentication
+  - level: RequestResponse
+    userGroups:
+      - "system:unauthenticated"
+    verbs: ["*"]
+
+  # Log system:masters activity in detail
+  - level: RequestResponse
+    userGroups:
+      - "system:masters"
+    verbs: ["*"]
+
+  # Log all requests to the DGSN namespace
+  - level: Metadata
+    namespaces: ["dgsn"]
+    verbs: ["*"]
+
+  # Omit health checks and status probes
+  - level: None
+    users:
+      - "system:kube-controller-manager"
+      - "system:kube-scheduler"
+      - "system:serviceaccount:kube-system:namespace-controller"
+    verbs: ["get", "list", "watch"]
+    resources:
+      - group: ""
+        resources:
+          - "events"
+          - "endpoints"
+          - "nodes/status"
+          - "pods/status"
+
+  - level: None
+    userGroups:
+      - "system:kube-proxy"
+    verbs: ["get", "list", "watch"]
+
+  # Default: log metadata for everything else
+  - level: Metadata
+    omitStages:
+      - "RequestReceived"
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: dgsn-audit-policy
+  namespace: dgsn
+data:
+  audit-policy.yaml: |
+    apiVersion: audit.k8s.io/v1
+    kind: Policy
+    metadata:
+      name: "dgsn-audit-policy"
+    rules:
+      - level: RequestResponse
+        resources:
+          - group: ""
+            resources: ["secrets", "pods/exec"]
+      - level: Metadata
+        resources:
+          - group: ""
+            resources: ["pods", "services", "configmaps"]
+      - level: None
+        users: ["system:kube-controller-manager"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: dgsn:audit-reader
+rules:
+  - apiGroups: [""]
+    resources: ["events"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: dgsn:audit-reader-binding
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: dgsn:audit-reader
+subjects:
+  - kind: ServiceAccount
+    name: dgsn-audit-reader
+    namespace: dgsn

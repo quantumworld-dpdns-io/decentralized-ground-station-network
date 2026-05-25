@@ -1,0 +1,18 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "dgsn-frontend.fullname" . }}-config
+  labels:
+    {{- include "dgsn-frontend.labels" . | nindent 4 }}
+data:
+  NEXT_PUBLIC_API_URL: {{ .Values.config.apiUrl | quote }}
+  NEXT_PUBLIC_GRPC_URL: {{ .Values.config.grpcUrl | quote }}
+  NEXT_PUBLIC_WS_URL: {{ .Values.config.wsUrl | quote }}
+  NEXT_PUBLIC_SENTRY_DSN: {{ .Values.config.sentryDsn | quote }}
+  NEXT_PUBLIC_POSTHOG_KEY: {{ .Values.config.posthogKey | quote }}
+  NEXT_PUBLIC_ENVIRONMENT: {{ .Values.config.environment | quote }}
+  NEXT_PUBLIC_QUANTUM_DASHBOARD: {{ .Values.config.featureFlags.quantumDashboard | quote }}
+  NEXT_PUBLIC_SIGNAL_ANALYSIS: {{ .Values.config.featureFlags.signalAnalysis | quote }}
+  NEXT_PUBLIC_MARKETPLACE: {{ .Values.config.featureFlags.marketplace | quote }}
+  NEXT_PUBLIC_AI_AGENTS: {{ .Values.config.featureFlags.aiAgents | quote }}
+  NEXT_PUBLIC_DARK_MODE: {{ .Values.config.featureFlags.darkMode | quote }}
