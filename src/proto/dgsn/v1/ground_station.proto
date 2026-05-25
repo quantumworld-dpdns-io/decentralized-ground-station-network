@@ -1,0 +1,89 @@
+syntax = "proto3";
+
+package dgsn.v1;
+
+option go_package = "github.com/quantumworld-dpdns-io/dgsn/api/proto/dgsn/v1;dgsnv1";
+
+import "dgsn/v1/common.proto";
+
+// GroundStation service for managing ground station registration and status
+service GroundStation {
+  // Register a new ground station in the network
+  rpc RegisterStation(RegisterStationRequest) returns (RegisterStationResponse);
+
+  // Get detailed information about a specific station
+  rpc GetStation(GetStationRequest) returns (Station);
+
+  // List all registered ground stations with optional filtering
+  rpc ListStations(ListStationsRequest) returns (ListStationsResponse);
+
+  // Update the operational status of a ground station
+  rpc UpdateStatus(UpdateStatusRequest) returns (UpdateStatusResponse);
+
+  // Delete a ground station registration
+  rpc DeleteStation(DeleteStationRequest) returns (Empty);
+}
+
+// Ground station resource representing a registered station
+message Station {
+  Metadata metadata = 1;
+  string name = 2;
+  string description = 3;
+  string owner_id = 4;
+  GeoLocation location = 5;
+  HardwareCapabilities capabilities = 6;
+  StationStatus status = 7;
+  repeated string tags = 8;
+  string timezone = 9;
+  string contact_email = 10;
+  bool is_public = 11;
+  double reliability_score = 12;
+  int64 total_passes_completed = 13;
+}
+
+message RegisterStationRequest {
+  string name = 1;
+  string description = 2;
+  GeoLocation location = 3;
+  HardwareCapabilities capabilities = 4;
+  string timezone = 5;
+  string contact_email = 6;
+  bool is_public = 7;
+  repeated string tags = 8;
+}
+
+message RegisterStationResponse {
+  Station station = 1;
+  string api_key = 2;
+}
+
+message GetStationRequest {
+  string station_id = 1;
+}
+
+message ListStationsRequest {
+  PaginationRequest pagination = 1;
+  string owner_id = 2;
+  StationStatus.OperatingStatus status_filter = 3;
+  GeoLocation near_location = 4;
+  double max_distance_km = 5;
+  repeated string capability_filters = 6;
+}
+
+message ListStationsResponse {
+  repeated Station stations = 1;
+  PaginationResponse pagination = 2;
+}
+
+message UpdateStatusRequest {
+  string station_id = 1;
+  StationStatus status = 2;
+}
+
+message UpdateStatusResponse {
+  Station station = 1;
+}
+
+message DeleteStationRequest {
+  string station_id = 1;
+}
