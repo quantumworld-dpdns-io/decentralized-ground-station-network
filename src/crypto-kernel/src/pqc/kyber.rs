@@ -534,8 +534,8 @@ fn kyber_internal_decapsulate(ciphertext: &[u8], secret_key: &[u8]) -> crate::Re
         s_coeffs.push(poly);
     }
 
-    let u_size = k * 32 * variant.du() / 8;
-    let v_size = k * 32 * variant.dv() / 8;
+    let u_size = k * 32 * variant.du();
+    let v_size = 32 * variant.dv();
     let ct_body = if ciphertext.len() > 1 { &ciphertext[1..] } else { &[] };
     let u_bytes = if ct_body.len() >= u_size { &ct_body[..u_size] } else { return Ok(vec![0u8; 32]); };
     let v_bytes = if ct_body.len() >= u_size + v_size { &ct_body[u_size..u_size + v_size] } else { return Ok(vec![0u8; 32]); };
