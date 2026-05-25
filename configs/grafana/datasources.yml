@@ -17,6 +17,8 @@ datasources:
       exemplarTraceIdDestinations:
         - name: traceID
           datasourceUid: tempo
+        - name: trace_id
+          datasourceUid: jaeger
 
   - name: Loki
     type: loki
@@ -32,6 +34,10 @@ datasources:
           matcherRegex: "trace_id=(\\w+)"
           url: "$${__value.raw}"
           datasourceUid: tempo
+        - name: jaegerTraceID
+          matcherRegex: "jaeger_trace_id=(\\w+)"
+          url: "$${__value.raw}"
+          datasourceUid: jaeger
 
   - name: Tempo
     type: tempo
@@ -46,6 +52,7 @@ datasources:
           - service
           - component
           - k8s.pod.name
+          - dgsn.operation
         mappedTags:
           - key: service.name
             value: service
@@ -56,6 +63,7 @@ datasources:
         tags:
           - service
           - component
+          - dgsn.operation
         queries:
           - query: 'rate(dgsn_api_request_duration_seconds_bucket{service="$service"}[$__rate_interval])'
       serviceMap:
@@ -67,6 +75,30 @@ datasources:
       spanBar:
         type: Tag
         tag: dgsn.operation
+
+  - name: Jaeger
+    type: jaeger
+    access: proxy
+    url: http://jaeger:16686
+    isDefault: false
+    editable: false
+    jsonData:
+      tracesToLogs:
+        datasourceUid: loki
+        tags:
+          - service
+          - component
+          - k8s.pod.name
+        filterByTraceID: true
+      tracesToMetrics:
+        datasourceUid: prometheus
+        tags:
+          - service
+          - component
+      serviceMap:
+        datasourceUid: prometheus
+      nodeGraph:
+        enabled: true
 
   - name: Grafana
     type: grafana
