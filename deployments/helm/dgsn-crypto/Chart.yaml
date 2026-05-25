@@ -1,0 +1,22 @@
+apiVersion: v2
+name: dgsn-crypto
+description: DGSN Crypto Service - Post-quantum cryptography operations
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+icon: https://dgsn.io/icon.svg
+keywords:
+  - dgsn
+  - cryptography
+  - pqc
+  - kyber
+  - dilithium
+home: https://dgsn.io
+sources:
+  - https://github.com/decentralized-ground-station-network
+maintainers:
+  - name: DGSN Team
+    email: dev@dgsn.io
+annotations:
+  artifacthub.io/category: security
+  artifacthub.io/license: MIT
