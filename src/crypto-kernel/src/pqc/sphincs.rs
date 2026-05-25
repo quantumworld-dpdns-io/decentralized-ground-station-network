@@ -130,7 +130,8 @@ fn shake256_xof(data: &[u8], output_len: usize) -> Vec<u8> {
     Update::update(&mut hasher, data);
     let mut reader = hasher.finalize_xof();
     let mut output = vec![0u8; output_len];
-    reader.squeeze(&mut output);
+    use sha3::digest::XofReader;
+    XofReader::read(&mut reader, &mut output);
     output
 }
 
