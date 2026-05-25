@@ -1,0 +1,48 @@
+name: Debian Package Release
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Release version'
+        required: true
+
+jobs:
+  build-deb:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install packaging tools
+        run: sudo apt-get update && sudo apt-get install -y dpkg-dev debhelper build-essential
+      - name: Build Debian package
+        run: |
+          VERSION="${{ github.event.release.tag_name || inputs.version }}"
+          VERSION="${VERSION#v}"
+          mkdir -p packaging/debian
+          cat > packaging/debian/control <<EOF
+          Source: dgsn
+          Section: net
+          Priority: optional
+          Maintainer: DGSN Team <dev@dgsn.io>
+          Build-Depends: debhelper (>= 13), golang-go, rustc, python3
+          Standards-Version: 4.6.2
+          Homepage: https://dgsn.io
+
+          Package: dgsn
+          Architecture: amd64 arm64
+          Depends: \${shlibs:Depends}, \${misc:Depends}, openssl
+          Description: Decentralized Ground Station Network
+           A decentralized satellite ground station network with
+           post-quantum cryptography and quantum computing integration.
+          EOF
+          cat > packaging/debian/changelog <<EOF
+          dgsn (${VERSION}) stable; urgency=medium
+            * Release v${VERSION}
+           -- DGSN Team <dev@dgsn.io>  $(date -R)
+          EOF
+          dpkg-buildpackage -uc -us
+      - name: Upload .deb
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ../dgsn_*.deb
