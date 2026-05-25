@@ -488,16 +488,48 @@ fn kyber_internal_encapsulate(public_key: &[u8]) -> crate::Result<(Vec<u8>, Vec<
     let t_poly_size = if k > 0 { (variant.pk_size() - 32) / k } else { 0 };
 
     let mut v = vec![0i16; 256];
-    for i in 0..k {
-        let mut t_i = vec![0i16; 256];
+    for _i in 0..k {
+        let mut poly = vec![0i16; 256];
         for j in 0..128 {
-            let idx = t_offset + i * t_poly_size + 2 * j;
-            let lo = public_key.get(idx).copied().unwrap_or(0) as u16;
-            let hi = public_key.get(idx + 1).copied().unwrap_or(0) as u16;
+            let idx = _i * 32 * variant.du() / 8 + 2 * j;
+            let lo = u_bytes.get(idx).copied().unwrap_or(0) as u16;
+            let hi = u_bytes.get(idx + 1).copied().unwrap_or(0) as u16;
             let packed = lo | (hi << 8);
-            t_i[2 * j] = decompress((packed & 0xFFF) as i16, 12);
-            t_i[2 * j + 1] = decompress(((packed >> 12) & 0xFFF) as i16, 12);
+            poly[2 * j] = decompress((packed & ((1 << variant.du()) - 1) as u16) as i16, variant.du());
+            poly[2 * j + 1] = decompress((packed >> variant.du() as u16) as i16, variant.du());
         }
+        u.push(poly);
+    }
+
+    let mut v_poly = vec![0i16; 256];
+    for j in 0..128 {
+        let lo = v_bytes.get(2 * j).copied().unwrap_or(0) as u16;
+        let hi = v_bytes.get(2 * j + 1).copied().unwrap_or(0) as u16;
+        let packed = lo | (hi << 8);
+        v_poly[2 * j] = decompress((packed & ((1 << variant.dv()) - 1) as u16) as i16, variant.dv());
+        v_poly[2 * j + 1] = decompress((packed >> variant.dv() as u16) as i16, variant.dv());
+    }
+
+    let nt_s: Vec<Vec<i16>> = s_coeffs.iter().map(|poly| ntt(poly)).collect();
+
+    let mut w = vec![0i16; 256];
+    for i in 0..k {
+        let nt_u_i = ntt(&u[i]);
+        let dot = poly_mul(&nt_s[i], &nt_u_i);
+        for idx in 0..256 {
+            w[idx] = mod_reduce(w[idx] + dot[idx]);
+        }
+    }
+    let w_inv = inv_ntt(&w);
+
+    let mut m = [0u8; 32];
+    for idx in 0..256 {
+        let v_val = v_poly[idx];
+        let w_val = w_inv[idx];
+        let diff = mod_reduce(v_val - w_val);
+        let m_bit = if diff > 3329 / 4 && diff < 3 * 3329 / 4 { 1 } else { 0 };
+        m[idx / 8] |= (m_bit as u8) << (idx % 8);
+    }
         let nt_t_i = ntt(&t_i);
         let dot = poly_mul(&nt_t_i, &nt_r[0]);
         for idx in 0..256 {
