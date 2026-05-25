@@ -480,7 +480,7 @@ fn kyber_internal_encapsulate(public_key: &[u8]) -> crate::Result<(Vec<u8>, Vec<
     }
 
     let dv = variant.dv();
-    let v_byte_len = k * 32 * dv / 8;
+    let v_byte_len = 32 * dv;
     let mut v_bytes = vec![0u8; v_byte_len];
     for j in 0..128.min(v_byte_len / 2) {
         let val = v_enc[2 * j] as u16 | ((v_enc[2 * j + 1] as u16) << dv as u16);
