@@ -1,69 +1,115 @@
-{{- if not .Values.grafana.enabled }}
-apiVersion: apps/v1
-kind: StatefulSet
+{{- if .Values.monitoring.enabled }}
+apiVersion: integreatly.org/v1alpha1
+kind: Grafana
 metadata:
   name: {{ include "dgsn-infra.fullname" . }}-grafana
   labels:
     {{- include "dgsn-infra.labels" . | nindent 4 }}
-    app.kubernetes.io/component: grafana
 spec:
-  serviceName: {{ include "dgsn-infra.fullname" . }}-grafana
-  replicas: 1
-  selector:
-    matchLabels:
-      {{- include "dgsn-infra.labels" . | nindent 6 }}
-      app.kubernetes.io/component: grafana
-  template:
-    metadata:
-      labels:
-        {{- include "dgsn-infra.labels" . | nindent 8 }}
-        app.kubernetes.io/component: grafana
-    spec:
-      containers:
-        - name: grafana
-          image: grafana/grafana:11.2.0
-          ports:
-            - containerPort: 3000
-              name: http
-          env:
-            - name: GF_SECURITY_ADMIN_PASSWORD
-              valueFrom:
-                secretKeyRef:
-                  name: dgsn-grafana-admin
-                  key: password
-            - name: GF_INSTALL_PLUGINS
-              value: "grafana-piechart-panel,grafana-worldmap-panel"
-          volumeMounts:
-            - name: data
-              mountPath: /var/lib/grafana
-          resources:
-            requests:
-              cpu: 200m
-              memory: 256Mi
-            limits:
-              cpu: 1
-              memory: 1Gi
-  volumeClaimTemplates:
-    - metadata:
-        name: data
-      spec:
-        accessModes: ["ReadWriteOnce"]
-        resources:
-          requests:
-            storage: 10Gi
+  config:
+    log:
+      mode: "console"
+      level: "info"
+    auth:
+      disable_login_form: false
+      disable_signout_menu: false
+    auth.anonymous:
+      enabled: false
+    dashboard:
+      default_home_dashboard_path: "/var/lib/grafana/dashboards/dgsn-overview.json"
+  dashboardLabelSelector:
+    - matchExpressions:
+        - key: app
+          operator: In
+          values:
+            - grafana
+  ingress:
+    enabled: true
+    hostname: grafana.dgsn.local
+    annotations:
+      cert-manager.io/cluster-issuer: "letsencrypt-prod"
+      nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    tls:
+      - hosts:
+          - grafana.dgsn.local
+        secretName: grafana-tls
+  resources:
+    requests:
+      cpu: 200m
+      memory: 256Mi
+    limits:
+      cpu: 1000m
+      memory: 1Gi
+  service:
+    name: {{ include "dgsn-infra.fullname" . }}-grafana
+    type: ClusterIP
+  client:
+    preferService: true
+  deployment:
+    annotations:
+      reloader.stakater.com/auto: "true"
 ---
-apiVersion: v1
-kind: Service
+apiVersion: integreatly.org/v1alpha1
+kind: GrafanaDataSource
 metadata:
-  name: {{ include "dgsn-infra.fullname" . }}-grafana
+  name: {{ include "dgsn-infra.fullname" . }}-prometheus-ds
   labels:
     {{- include "dgsn-infra.labels" . | nindent 4 }}
-    app.kubernetes.io/component: grafana
 spec:
-  ports:
-    - port: 3000
-      name: http
-  selector:
+  name: prometheus.yaml
+  datasources:
+    - name: Prometheus
+      type: prometheus
+      access: proxy
+      url: http://{{ include "dgsn-infra.fullname" . }}-prometheus-operated:9090
+      isDefault: true
+      version: 1
+      editable: true
+      jsonData:
+        timeInterval: "30s"
+        queryTimeout: "60s"
+---
+apiVersion: integreatly.org/v1alpha1
+kind: GrafanaDataSource
+metadata:
+  name: {{ include "dgsn-infra.fullname" . }}-loki-ds
+  labels:
     {{- include "dgsn-infra.labels" . | nindent 4 }}
-    app.kubernetes.io/component: grafana
+spec:
+  name: loki.yaml
+  datasources:
+    - name: Loki
+      type: loki
+      access: proxy
+      url: http://loki.monitoring:3100
+      version: 1
+      editable: true
+---
+apiVersion: integreatly.org/v1alpha1
+kind: GrafanaDataSource
+metadata:
+  name: {{ include "dgsn-infra.fullname" . }}-tempo-ds
+  labels:
+    {{- include "dgsn-infra.labels" . | nindent 4 }}
+spec:
+  name: tempo.yaml
+  datasources:
+    - name: Tempo
+      type: tempo
+      access: proxy
+      url: http://tempo.monitoring:3200
+      version: 1
+      editable: true
+      jsonData:
+        search:
+          enabled: true
+        nodeGraph:
+          enabled: true
+        tracesToLogs:
+          datasourceUid: "loki"
+          tags:
+            - key: "k8s.pod.name"
+              value: "pod"
+            - key: "k8s.namespace.name"
+              value: "namespace"
 {{- end }}
