@@ -46,6 +46,15 @@ fn mod_reduce(x: i16) -> i16 {
     r
 }
 
+fn mod_reduce_i32(x: i32) -> i16 {
+    let q = 3329i32;
+    let mut r = x % q;
+    if r < 0 {
+        r += q;
+    }
+    r as i16
+}
+
 fn ntt(coeffs: &[i16]) -> Vec<i16> {
     let n = 256usize;
     let mut out = coeffs.to_vec();
