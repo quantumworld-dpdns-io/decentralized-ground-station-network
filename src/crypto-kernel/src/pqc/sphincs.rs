@@ -79,24 +79,13 @@ impl SphincsVariant {
     fn fors_trees(&self) -> usize {
         SPX_FORS_TREES
     }
-
-    fn _fors_height(&self) -> usize {
-        _SPX_FORS_HEIGHT
-    }
-
-    fn _d(&self) -> usize {
-        _SPX_D
-    }
-
-    fn tree_height(&self) -> usize {
-        SPX_TREE_HEIGHT
-    }
 }
 
 #[derive(Clone, Zeroize, Serialize, Deserialize)]
 #[zeroize(drop)]
 pub struct SphincsPublicKey {
     pub raw: Vec<u8>,
+    #[zeroize(skip)]
     pub variant: SphincsVariant,
 }
 
@@ -104,6 +93,7 @@ pub struct SphincsPublicKey {
 #[zeroize(drop)]
 pub struct SphincsSecretKey {
     pub raw: Vec<u8>,
+    #[zeroize(skip)]
     pub variant: SphincsVariant,
 }
 
@@ -111,6 +101,7 @@ pub struct SphincsSecretKey {
 #[zeroize(drop)]
 pub struct SphincsSignature {
     pub raw: Vec<u8>,
+    #[zeroize(skip)]
     pub variant: SphincsVariant,
 }
 
@@ -139,22 +130,8 @@ fn shake256_xof(data: &[u8], output_len: usize) -> Vec<u8> {
     Update::update(&mut hasher, data);
     let mut reader = hasher.finalize_xof();
     let mut output = vec![0u8; output_len];
-    XofReader::squeeze(&mut reader, &mut output);
+    reader.squeeze(&mut output);
     output
-}
-
-fn _mgf1(seed: &[u8], mask_len: usize) -> Vec<u8> {
-    let mut mask = Vec::with_capacity(mask_len);
-    let mut counter = 0u32;
-    while mask.len() < mask_len {
-        let mut input = seed.to_vec();
-        input.extend_from_slice(&counter.to_be_bytes());
-        let hash = sha3_256_hash(&input);
-        mask.extend_from_slice(&hash);
-        counter += 1;
-    }
-    mask.truncate(mask_len);
-    mask
 }
 
 fn hash_message(pk_seed: &[u8], pk_root: &[u8], message: &[u8], n: usize) -> Vec<u8> {
@@ -164,15 +141,7 @@ fn hash_message(pk_seed: &[u8], pk_root: &[u8], message: &[u8], n: usize) -> Vec
     input.extend_from_slice(pk_root);
     input.extend_from_slice(message);
     let mut hash = sha3_512_hash(&input);
-    hash.truncate(n * (1 + SPX_FORS_TREES));
-    hash.to_vec()
-}
-
-fn _prf_addr(seed: &[u8], addr: &[u8], n: usize) -> Vec<u8> {
-    let mut input = vec![0x01u8];
-    input.extend_from_slice(seed);
-    input.extend_from_slice(addr);
-    shake256_xof(&input, n)
+    hash[..n * (1 + SPX_FORS_TREES)].to_vec()
 }
 
 fn prf_msg(seed: &[u8], randomizer: &[u8], _addr: &[u8], n: usize) -> Vec<u8> {
@@ -326,9 +295,6 @@ fn sphincs_internal_sign(message: &[u8], secret_key: &[u8]) -> crate::Result<Vec
     let sig_size = variant.sig_size();
     let wots_len = variant.wots_len();
     let fors_trees = variant.fors_trees();
-    let _fors_height = variant._fors_height();
-    let _d = variant._d();
-    let tree_height = variant.tree_height();
 
     let sk_offset = 1;
     let sk_seed = &secret_key[sk_offset..sk_offset + n];
@@ -344,8 +310,6 @@ fn sphincs_internal_sign(message: &[u8], secret_key: &[u8]) -> crate::Result<Vec
 
     let r = prf_msg(sk_seed, &opt_rand, &[], n);
 
-    let _fors_msg_offset = n;
-
     let mut signature = Vec::with_capacity(sig_size);
     signature.push(variant as u8);
 
@@ -353,12 +317,14 @@ fn sphincs_internal_sign(message: &[u8], secret_key: &[u8]) -> crate::Result<Vec
 
     let mut fors_sig = Vec::new();
     for i in 0..fors_trees {
-        let leaf_data = [&msg_hash, &i.to_be_bytes()].concat();
+        let mut leaf_data = Vec::new();
+        leaf_data.extend_from_slice(&msg_hash);
+        leaf_data.extend_from_slice(&i.to_be_bytes());
         fors_sig.extend_from_slice(&shake256_xof(&leaf_data, n));
     }
     signature.extend_from_slice(&fors_sig);
 
-    for i in 0.._d {
+    for i in 0.._SPX_D {
         let tree_addr = {
             let mut a = vec![0u8; 32];
             let i_bytes = (i as u32).to_be_bytes();
@@ -366,15 +332,22 @@ fn sphincs_internal_sign(message: &[u8], secret_key: &[u8]) -> crate::Result<Vec
             a
         };
 
-        let wots_sig: Vec<u8> = (0..wots_len)
-            .flat_map(|_| shake256_xof(&[pk_seed, &tree_addr].concat(), n))
-            .collect();
+        let mut wots_sig = Vec::new();
+        for _ in 0..wots_len {
+            let mut s = Vec::new();
+            s.extend_from_slice(pk_seed);
+            s.extend_from_slice(&tree_addr);
+            wots_sig.extend_from_slice(&shake256_xof(&s, n));
+        }
         signature.extend_from_slice(&wots_sig);
 
         let mut auth_path = Vec::new();
-        for j in 0..tree_height {
-            let sibling = shake256_xof(&[pk_seed, &tree_addr, &j.to_be_bytes()].concat(), n);
-            auth_path.extend_from_slice(&sibling);
+        for j in 0..SPX_TREE_HEIGHT {
+            let mut sibling_input = Vec::new();
+            sibling_input.extend_from_slice(pk_seed);
+            sibling_input.extend_from_slice(&tree_addr);
+            sibling_input.extend_from_slice(&j.to_be_bytes());
+            auth_path.extend_from_slice(&shake256_xof(&sibling_input, n));
         }
         signature.extend_from_slice(&auth_path);
     }
@@ -428,27 +401,26 @@ fn sphincs_internal_verify(message: &[u8], signature: &[u8], public_key: &[u8]) 
 
     let msg_hash = hash_message(&pk_seed[..n], &pk_root[..n], message, n);
 
-    let _fors_msg_offset = n;
-
     let fors_trees = SPX_FORS_TREES;
 
     let mut leaf_nodes = Vec::new();
     for i in 0..fors_trees {
-        let leaf_data = [&msg_hash, &i.to_be_bytes()].concat();
+        let mut leaf_data = Vec::new();
+        leaf_data.extend_from_slice(&msg_hash);
+        leaf_data.extend_from_slice(&i.to_be_bytes());
         let hash = shake256_xof(&leaf_data, n);
         leaf_nodes.push(hash);
     }
 
     let computed_root = tree_hash(&leaf_nodes, &pk_seed[..n], &[], n);
 
-    let _d = _SPX_D;
     let tree_height = SPX_TREE_HEIGHT;
     let wots_len = SPX_WOTS_LEN;
 
     let mut sig_offset = n + fors_trees * n;
     let mut expected_root = computed_root;
 
-    for _layer in 0.._d {
+    for _layer in 0.._SPX_D {
         if sig_offset + wots_len * n > sig_data.len() {
             return Ok(false);
         }
@@ -460,11 +432,14 @@ fn sphincs_internal_verify(message: &[u8], signature: &[u8], public_key: &[u8]) 
         sig_offset += tree_height * n;
 
         let addr = vec![0u8; 32];
-        let _leaf_hash = tree_hash(&[expected_root.clone()], &pk_seed[..n], &addr, n);
+        let leaf_hash = tree_hash(&[expected_root.clone()], &pk_seed[..n], &addr, n);
 
-        let mut current = _leaf_hash;
+        let mut current = leaf_hash;
         for _j in 0..tree_height {
-            current = shake256_xof(&[&current, &pk_seed[..n]].concat(), n);
+            let mut input = Vec::new();
+            input.extend_from_slice(&current);
+            input.extend_from_slice(&pk_seed[..n]);
+            current = shake256_xof(&input, n);
         }
         expected_root = current;
     }
