@@ -1,129 +1,78 @@
 terraform {
-  required_version = ">= 1.9"
   required_providers {
     aws = {
       source  = "hashicorp/aws"
-      version = "~> 5.0"
+      version = ">= 5.0.0"
     }
-    random = {
-      source  = "hashicorp/random"
-      version = "~> 3.6"
+    kubernetes = {
+      source  = "hashicorp/kubernetes"
+      version = ">= 2.0.0"
     }
-  }
-}
-
-provider "aws" {
-  region = var.aws_region
-}
-
-# VPC
-resource "aws_vpc" "main" {
-  cidr_block           = var.vpc_cidr
-  enable_dns_hostnames = true
-  enable_dns_support   = true
-
-  tags = {
-    Name        = "${var.project_name}-vpc"
-    Environment = var.environment
-    Project     = var.project_name
-  }
-}
-
-resource "aws_subnet" "private" {
-  count             = length(var.private_subnet_cidrs)
-  vpc_id            = aws_vpc.main.id
-  cidr_block        = var.private_subnet_cidrs[count.index]
-  availability_zone = var.availability_zones[count.index]
-
-  tags = {
-    Name        = "${var.project_name}-private-${count.index}"
-    Environment = var.environment
-    Project     = var.project_name
-    Kubernetes  = "shared"
-  }
-}
-
-resource "aws_subnet" "public" {
-  count             = length(var.public_subnet_cidrs)
-  vpc_id            = aws_vpc.main.id
-  cidr_block        = var.public_subnet_cidrs[count.index]
-  availability_zone = var.availability_zones[count.index]
-  map_public_ip_on_launch = true
-
-  tags = {
-    Name        = "${var.project_name}-public-${count.index}"
-    Environment = var.environment
-    Project     = var.project_name
-    Kubernetes  = "shared"
-  }
-}
-
-resource "aws_internet_gateway" "main" {
-  vpc_id = aws_vpc.main.id
-
-  tags = {
-    Name        = "${var.project_name}-igw"
-    Environment = var.environment
-  }
-}
-
-resource "aws_nat_gateway" "main" {
-  count         = length(var.public_subnet_cidrs)
-  allocation_id = aws_eip.nat[count.index].id
-  subnet_id     = aws_subnet.public[count.index].id
-
-  tags = {
-    Name        = "${var.project_name}-nat-${count.index}"
-    Environment = var.environment
-  }
-}
-
-resource "aws_eip" "nat" {
-  count  = length(var.public_subnet_cidrs)
-  domain = "vpc"
-
-  tags = {
-    Name        = "${var.project_name}-eip-${count.index}"
-    Environment = var.environment
-  }
-}
-
-# EKS Cluster
-resource "aws_eks_cluster" "main" {
-  name     = "${var.project_name}-${var.environment}"
-  role_arn = aws_iam_role.eks_cluster.arn
-  version  = var.eks_version
-
-  vpc_config {
-    subnet_ids              = concat(aws_subnet.private[*].id, aws_subnet.public[*].id)
-    endpoint_private_access = true
-    endpoint_public_access  = true
-    public_access_cidrs     = var.allowed_cidrs
-  }
-
-  encryption_config {
-    resources = ["secrets"]
-    provider {
-      key_arn = aws_kms_key.eks.arn
+    http = {
+      source  = "hashicorp/http"
+      version = ">= 3.0.0"
+    }
+    tls = {
+      source  = "hashicorp/tls"
+      version = ">= 4.0.0"
     }
   }
+}
 
-  enabled_cluster_log_types = ["api", "audit", "authenticator", "controllerManager", "scheduler"]
+data "aws_availability_zones" "available" {
+  state = "available"
+}
 
+data "aws_caller_identity" "current" {}
+
+data "tls_certificate" "eks" {
+  url = aws_eks_cluster.dgsn.endpoint
+}
+
+locals {
+  vpc_id = module.vpc.vpc_id
   tags = {
     Environment = var.environment
-    Project     = var.project_name
+    Project     = "DGSN"
+    ManagedBy   = "Terraform"
   }
 }
 
-resource "aws_kms_key" "eks" {
-  description             = "EKS secret encryption key"
-  deletion_window_in_days = 7
-  enable_key_rotation     = true
+module "vpc" {
+  source  = "terraform-aws-modules/vpc/aws"
+  version = "~> 5.0"
+
+  name = "${var.environment}-dgsn-vpc"
+  cidr = var.vpc_cidr
+
+  azs             = slice(data.aws_availability_zones.available.names, 0, length(var.private_subnets))
+  private_subnets = var.private_subnets
+  public_subnets  = var.public_subnets
+
+  enable_nat_gateway = true
+  single_nat_gateway = false
+  one_nat_gateway_per_az = var.multi_az
+
+  enable_vpn_gateway          = false
+  enable_dns_hostnames        = true
+  enable_dns_support          = true
+  enable_flow_log             = var.enable_vpc_flow_logs
+  cloudwatch_log_group_retention_in_days = 30
+
+  flow_log_iam_role_arn = aws_iam_role.vpc_flow_log.arn
+  flow_log_destination_type = "cloud-watch-logs"
+
+  tags = local.tags
+  private_subnet_tags = {
+    "kubernetes.io/role/internal-elb" = "1"
+  }
+  public_subnet_tags = {
+    "kubernetes.io/role/elb" = "1"
+  }
 }
 
-resource "aws_iam_role" "eks_cluster" {
-  name = "${var.project_name}-eks-cluster-${var.environment}"
+resource "aws_iam_role" "vpc_flow_log" {
+  name = "${var.environment}-vpc-flow-log-role"
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
@@ -132,144 +81,109 @@ resource "aws_iam_role" "eks_cluster" {
         Action = "sts:AssumeRole"
         Effect = "Allow"
         Principal = {
-          Service = "eks.amazonaws.com"
+          Service = "vpc-flow-logs.amazonaws.com"
         }
       }
     ]
   })
+
+  tags = local.tags
 }
 
-resource "aws_iam_role_policy_attachment" "eks_cluster_policy" {
-  policy_arn = "arn:aws:iam::aws:policy/AmazonEKSClusterPolicy"
-  role       = aws_iam_role.eks_cluster.name
+resource "aws_iam_role_policy_attachment" "vpc_flow_log" {
+  role       = aws_iam_role.vpc_flow_log.name
+  policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonVPCFlowLogFullAccess"
 }
 
-resource "aws_iam_role_policy_attachment" "eks_service_policy" {
-  policy_arn = "arn:aws:iam::aws:policy/AmazonEKSServicePolicy"
-  role       = aws_iam_role.eks_cluster.name
-}
+module "eks" {
+  source  = "terraform-aws-modules/eks/aws"
+  version = "~> 19.0"
 
-# EKS Node Group
-resource "aws_eks_node_group" "main" {
-  cluster_name    = aws_eks_cluster.main.name
-  node_group_name = "${var.project_name}-ng-${var.environment}"
-  node_role_arn   = aws_iam_role.eks_nodes.arn
-  subnet_ids      = aws_subnet.private[*].id
-  version         = var.eks_version
+  cluster_name    = var.cluster_name
+  cluster_version = "1.29"
 
-  instance_types = var.node_instance_types
+  vpc_id     = module.vpc.vpc_id
+  subnet_ids = module.vpc.private_subnets
 
-  scaling_config {
-    desired_size = var.node_desired_size
-    min_size     = var.node_min_size
-    max_size     = var.node_max_size
-  }
+  cluster_endpoint_public_access  = true
+  cluster_endpoint_private_access = true
 
-  update_config {
-    max_unavailable = 1
-  }
+  eks_managed_node_groups = {
+    on_demand = {
+      capacity_type  = "ON_DEMAND"
+      instance_types = var.instance_types
+      min_size       = var.min_size
+      max_size       = var.max_size
+      desired_size   = var.min_size
 
-  labels = {
-    Environment = var.environment
-    Project     = var.project_name
-  }
-
-  tags = {
-    Environment                        = var.environment
-    Project                            = var.project_name
-    "k8s.io/cluster-autoscaler/enabled" = "true"
-  }
-}
-
-resource "aws_iam_role" "eks_nodes" {
-  name = "${var.project_name}-eks-nodes-${var.environment}"
-
-  assume_role_policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [
-      {
-        Action = "sts:AssumeRole"
-        Effect = "Allow"
-        Principal = {
-          Service = "ec2.amazonaws.com"
-        }
+      iam_role_additional_policies = {
+        AmazonSSMManagedInstanceCore = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
+        AmazonEKS_CNI_Policy         = "arn:aws:iam::aws:policy/AmazonEKS_CNI_Policy"
       }
-    ]
-  })
-}
 
-resource "aws_iam_role_policy_attachment" "nodes_worker_policy" {
-  policy_arn = "arn:aws:iam::aws:policy/AmazonEKSWorkerNodePolicy"
-  role       = aws_iam_role.eks_nodes.name
-}
-
-resource "aws_iam_role_policy_attachment" "nodes_cni_policy" {
-  policy_arn = "arn:aws:iam::aws:policy/AmazonEKS_CNI_Policy"
-  role       = aws_iam_role.eks_nodes.name
-}
-
-resource "aws_iam_role_policy_attachment" "nodes_registry_policy" {
-  policy_arn = "arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly"
-  role       = aws_iam_role.eks_nodes.name
-}
-
-# RDS PostgreSQL
-resource "aws_db_instance" "main" {
-  identifier        = "${var.project_name}-${var.environment}"
-  engine            = "postgres"
-  engine_version    = var.postgres_version
-  instance_class    = var.rds_instance_class
-  allocated_storage = var.rds_allocated_storage
-  storage_encrypted = true
-  storage_type      = "gp3"
-
-  db_name  = "dgsn"
-  username = var.db_username
-  password = random_password.db_password.result
-
-  vpc_security_group_ids = [aws_security_group.rds.id]
-  db_subnet_group_name   = aws_db_subnet_group.main.name
-
-  backup_retention_period = var.db_backup_retention
-  backup_window           = "03:00-04:00"
-  maintenance_window      = "sun:04:00-sun:05:00"
-
-  enabled_cloudwatch_logs_exports = ["postgresql", "upgrade"]
-
-  deletion_protection = var.environment == "prod" ? true : false
-  skip_final_snapshot = var.environment == "prod" ? false : true
-
-  tags = {
-    Environment = var.environment
-    Project     = var.project_name
+      tags = merge(local.tags, {
+        "k8s.io/cluster-autoscaler/enabled" = "true"
+        "k8s.io/cluster-autoscaler/${var.cluster_name}" = "owned"
+      })
+    }
   }
-}
 
-resource "random_password" "db_password" {
-  length  = 24
-  special = false
-}
+  dynamic "eks_managed_node_groups" {
+    for_each = var.use_spot_instances ? ["spot"] : []
+    content {
+      capacity_type  = "SPOT"
+      instance_types = var.spot_instance_types
+      min_size       = 0
+      max_size       = var.max_size
+      desired_size   = 0
 
-resource "aws_db_subnet_group" "main" {
-  name       = "${var.project_name}-${var.environment}"
-  subnet_ids = aws_subnet.private[*].id
+      iam_role_additional_policies = {
+        AmazonSSMManagedInstanceCore = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
+        AmazonEKS_CNI_Policy         = "arn:aws:iam::aws:policy/AmazonEKS_CNI_Policy"
+      }
 
-  tags = {
-    Environment = var.environment
-    Project     = var.project_name
+      tags = merge(local.tags, {
+        "k8s.io/cluster-autoscaler/enabled" = "true"
+        "k8s.io/cluster-autoscaler/${var.cluster_name}" = "owned"
+        "kubernetes.io/lifecycle" = "spot"
+      })
+    }
   }
+
+  cluster_addons = {
+    coredns = {
+      most_recent = true
+    }
+    kube-proxy = {
+      most_recent = true
+    }
+    vpc-cni = {
+      most_recent = true
+    }
+  }
+
+  tags = local.tags
 }
 
-resource "aws_security_group" "rds" {
-  name        = "${var.project_name}-rds-${var.environment}"
-  description = "RDS security group"
-  vpc_id      = aws_vpc.main.id
+resource "aws_security_group" "dgsn_backend" {
+  name        = "${var.environment}-dgsn-backend"
+  description = "Allow backend traffic"
+  vpc_id      = module.vpc.vpc_id
 
   ingress {
-    from_port = 5432
-    to_port   = 5432
-    protocol  = "tcp"
-    self      = true
+    from_port   = 8080
+    to_port     = 8080
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+    description = "Backend HTTP API"
+  }
+
+  ingress {
+    from_port   = 50051
+    to_port     = 50051
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+    description = "Backend gRPC API"
   }
 
   egress {
@@ -279,73 +193,187 @@ resource "aws_security_group" "rds" {
     cidr_blocks = ["0.0.0.0/0"]
   }
 
-  tags = {
-    Environment = var.environment
-    Project     = var.project_name
-  }
+  tags = local.tags
 }
 
-# ElastiCache Redis
-resource "aws_elasticache_cluster" "main" {
-  cluster_id           = "${var.project_name}-${var.environment}"
-  engine               = "redis"
-  engine_version       = var.redis_version
-  node_type            = var.redis_node_type
-  num_cache_nodes      = var.redis_num_nodes
-  parameter_group_name = "default.redis7"
-  port                 = 6379
-
-  subnet_group_name  = aws_elasticache_subnet_group.main.name
-  security_group_ids = [aws_security_group.redis.id]
-
-  tags = {
-    Environment = var.environment
-    Project     = var.project_name
-  }
-}
-
-resource "aws_elasticache_subnet_group" "main" {
-  name       = "${var.project_name}-${var.environment}"
-  subnet_ids = aws_subnet.private[*].id
-}
-
-resource "aws_security_group" "redis" {
-  name        = "${var.project_name}-redis-${var.environment}"
-  description = "Redis security group"
-  vpc_id      = aws_vpc.main.id
+resource "aws_security_group" "dgsn_crypto" {
+  name        = "${var.environment}-dgsn-crypto"
+  description = "Allow crypto service traffic"
+  vpc_id      = module.vpc.vpc_id
 
   ingress {
-    from_port = 6379
-    to_port   = 6379
-    protocol  = "tcp"
-    self      = true
+    from_port   = 50051
+    to_port     = 50051
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+    description = "Crypto gRPC API"
   }
 
-  tags = {
-    Environment = var.environment
-    Project     = var.project_name
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
   }
+
+  tags = local.tags
 }
 
-# S3 bucket for Terraform state
-resource "aws_s3_bucket" "terraform_state" {
-  bucket = "${var.project_name}-terraform-state-${var.environment}"
+resource "aws_security_group" "dgsn_quantum" {
+  name        = "${var.environment}-dgsn-quantum"
+  description = "Allow quantum service traffic"
+  vpc_id      = module.vpc.vpc_id
 
-  tags = {
-    Environment = var.environment
-    Project     = var.project_name
+  ingress {
+    from_port   = 50052
+    to_port     = 50052
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+    description = "Quantum gRPC API"
   }
+
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  tags = local.tags
 }
 
-resource "aws_s3_bucket_versioning" "terraform_state" {
-  bucket = aws_s3_bucket.terraform_state.id
+resource "aws_security_group" "dgsn_signal" {
+  name        = "${var.environment}-dgsn-signal"
+  description = "Allow signal service traffic"
+  vpc_id      = module.vpc.vpc_id
+
+  ingress {
+    from_port   = 50053
+    to_port     = 50053
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+    description = "Signal gRPC API"
+  }
+
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  tags = local.tags
+}
+
+module "redis" {
+  source  = "terraform-aws-modules/elasticache/aws"
+  version = "~> 7.0"
+
+  engine           = "redis"
+  engine_version   = "7.1"
+  family           = "redis7"
+  node_type        = "cache.t3.medium"
+  num_cache_nodes  = 3
+  cluster_mode     = "enabled"
+  num_node_groups  = 3
+  replicas_per_node_group = 1
+
+  subnet_group_name = "${var.environment}-redis-subnet-group"
+  security_group_ids = [aws_security_group.dgsn_backend.id]
+
+  subnets = module.vpc.private_subnets
+
+  at_rest_encryption_enabled = true
+  transit_encryption_enabled = true
+
+  tags = local.tags
+}
+
+resource "aws_security_group" "postgres" {
+  name        = "${var.environment}-postgres"
+  description = "Allow PostgreSQL traffic"
+  vpc_id      = module.vpc.vpc_id
+
+  ingress {
+    from_port   = 5432
+    to_port     = 5432
+    protocol    = "tcp"
+    cidr_blocks = module.vpc.private_subnets_cidr_blocks
+    description = "PostgreSQL"
+  }
+
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  tags = local.tags
+}
+
+module "rds" {
+  source  = "terraform-aws-modules/rds/aws"
+  version = "~> 6.0"
+
+  identifier = "${var.environment}-dgsn"
+
+  engine               = "postgres"
+  engine_version       = "15"
+  family               = "postgres15"
+  instance_class       = "db.t3.large"
+  allocated_storage    = 100
+  max_allocated_storage = 500
+  storage_encrypted    = true
+  storage_type         = "gp3"
+
+  db_subnet_group_name = "${var.environment}-dgsn-subnet-group"
+  vpc_security_group_ids = [aws_security_group.postgres.id]
+
+  subnet_ids = module.vpc.private_subnets
+
+  create_db_subnet_group = true
+
+  database_name = "dgsn"
+  username      = "dgsn_admin"
+  password      = var.rds_password
+
+  multi_az = var.multi_az
+
+  performance_insights_enabled = true
+  performance_insights_retention_period = 7
+
+  backup_retention_period = 7
+  copy_tags_to_snapshot = true
+
+  tags = local.tags
+}
+
+resource "aws_s3_bucket" "signals" {
+  bucket = "${var.environment}-dgsn-signals-${data.aws_caller_identity.current.account_id}"
+  force_destroy = false
+
+  tags = merge(local.tags, {
+    Name = "${var.environment}-dgsn-signals"
+  })
+}
+
+resource "aws_s3_bucket_acl" "signals" {
+  bucket = aws_s3_bucket.signals.id
+  acl    = "private"
+}
+
+resource "aws_s3_bucket_versioning" "signals" {
+  bucket = aws_s3_bucket.signals.id
+
   versioning_configuration {
     status = "Enabled"
   }
 }
 
-resource "aws_s3_bucket_server_side_encryption_configuration" "terraform_state" {
-  bucket = aws_s3_bucket.terraform_state.id
+resource "aws_s3_bucket_server_side_encryption_configuration" "signals" {
+  bucket = aws_s3_bucket.signals.id
+
   rule {
     apply_server_side_encryption_by_default {
       sse_algorithm = "AES256"
@@ -353,18 +381,156 @@ resource "aws_s3_bucket_server_side_encryption_configuration" "terraform_state" 
   }
 }
 
-# ECR repositories
-resource "aws_ecr_repository" "services" {
-  for_each = toset(var.ecr_repositories)
-  name     = "${var.project_name}/${each.key}"
-  image_tag_mutability = "MUTABLE"
+resource "aws_s3_bucket_public_access_block" "signals" {
+  bucket = aws_s3_bucket.signals.id
 
-  image_scanning_configuration {
-    scan_on_push = true
+  block_public_acls       = true
+  block_public_policy     = true
+  ignore_public_acls      = true
+  restrict_public_buckets = true
+}
+
+resource "aws_s3_bucket_lifecycle_configuration" "signals" {
+  bucket = aws_s3_bucket.signals.id
+
+  rule {
+    id     = "raw-signals-retention"
+    prefix = "raw/"
+    status = "Enabled"
+
+    transition {
+      days          = 7
+      storage_class = "STANDARD_IA"
+    }
+
+    transition {
+      days          = 30
+      storage_class = "GLACIER"
+    }
+
+    expiration {
+      days = 365
+    }
   }
 
-  tags = {
-    Environment = var.environment
-    Project     = var.project_name
+  rule {
+    id     = "processed-signals-retention"
+    prefix = "processed/"
+    status = "Enabled"
+
+    transition {
+      days          = 30
+      storage_class = "STANDARD_IA"
+    }
+
+    expiration {
+      days = 730
+    }
   }
+}
+
+resource "aws_iam_role" "dgsn_backend" {
+  name = "${var.environment}-dgsn-backend-role"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Principal = {
+          Federated = module.eks.oidc_provider_arn
+        }
+        Action = "sts:AssumeRoleWithWebIdentity"
+        Condition = {
+          StringEquals = {
+            "${replace(module.eks.oidc_provider_arn, "/^arn:aws:iam::\\d+:oidc-provider\\//", "")}:sub" = "system:serviceaccount:dgsn-${var.environment}:dgsn-backend"
+          }
+        }
+      }
+    ]
+  })
+
+  tags = local.tags
+}
+
+resource "aws_iam_role_policy_attachment" "dgsn_backend_s3" {
+  role       = aws_iam_role.dgsn_backend.name
+  policy_arn = aws_iam_policy.dgsn_backend_s3.arn
+}
+
+resource "aws_iam_policy" "dgsn_backend_s3" {
+  name        = "${var.environment}-dgsn-backend-s3"
+  description = "Allow backend access to S3"
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "s3:PutObject",
+          "s3:GetObject",
+          "s3:ListBucket",
+          "s3:DeleteObject"
+        ]
+        Resource = [
+          aws_s3_bucket.signals.arn,
+          "${aws_s3_bucket.signals.arn}/*"
+        ]
+      }
+    ]
+  })
+}
+
+resource "aws_iam_role" "dgsn_signal" {
+  name = "${var.environment}-dgsn-signal-role"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Principal = {
+          Federated = module.eks.oidc_provider_arn
+        }
+        Action = "sts:AssumeRoleWithWebIdentity"
+        Condition = {
+          StringEquals = {
+            "${replace(module.eks.oidc_provider_arn, "/^arn:aws:iam::\\d+:oidc-provider\\//", "")}:sub" = "system:serviceaccount:dgsn-${var.environment}:dgsn-signal"
+          }
+        }
+      }
+    ]
+  })
+
+  tags = local.tags
+}
+
+resource "aws_iam_role_policy_attachment" "dgsn_signal_s3" {
+  role       = aws_iam_role.dgsn_signal.name
+  policy_arn = aws_iam_policy.dgsn_signal_s3.arn
+}
+
+resource "aws_iam_policy" "dgsn_signal_s3" {
+  name        = "${var.environment}-dgsn-signal-s3"
+  description = "Allow signal service access to S3"
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "s3:PutObject",
+          "s3:GetObject",
+          "s3:ListBucket",
+          "s3:DeleteObject"
+        ]
+        Resource = [
+          aws_s3_bucket.signals.arn,
+          "${aws_s3_bucket.signals.arn}/*"
+        ]
+      }
+    ]
+  })
 }

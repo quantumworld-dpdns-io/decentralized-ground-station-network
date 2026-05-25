@@ -3,38 +3,184 @@ redis:
   architecture: replication
   auth:
     enabled: true
-    existingSecret: dgsn-redis-credentials
-  master:
-    persistence:
-      size: 10Gi
-    resources:
-      requests:
-        cpu: 500m
-        memory: 1Gi
-      limits:
-        cpu: 2
-        memory: 4Gi
-  replica:
-    replicaCount: 3
-    persistence:
-      size: 10Gi
-    resources:
-      requests:
-        cpu: 300m
-        memory: 512Mi
-      limits:
-        cpu: 1
-        memory: 2Gi
+    existingSecret: "redis-secret"
+  sentinel:
+    enabled: true
+    masterSet: "dgsn-redis"
+  cluster:
+    enabled: true
+    replicas: 3
   metrics:
     enabled: true
     serviceMonitor:
       enabled: true
+  persistence:
+    enabled: true
+    size: 20Gi
+    storageClass: "gp3"
+  resources:
+    requests:
+      cpu: 250m
+      memory: 512Mi
+    limits:
+      cpu: 1000m
+      memory: 2Gi
 
-otelCollector:
+minio:
   enabled: true
+  mode: distributed
+  statefulset:
+    replicaCount: 4
+    drivesPerNode: 4
+  auth:
+    existingSecret: "minio-secret"
+  persistence:
+    enabled: true
+    size: 100Gi
+    storageClass: "gp3"
+  resources:
+    requests:
+      cpu: 500m
+      memory: 1Gi
+    limits:
+      cpu: 2000m
+      memory: 4Gi
+  metrics:
+    enabled: true
+    serviceMonitor:
+      enabled: true
+  ingress:
+    enabled: false
+
+monitoring:
+  enabled: true
+
+prometheus-stack:
+  enabled: true
+  namespaceOverride: "monitoring"
+  crds:
+    enabled: true
+  alertmanager:
+    enabled: true
+    config:
+      global:
+        smtp_smarthost: ""
+        smtp_from: ""
+      route:
+        group_by: ["alertname", "job"]
+        group_wait: 30s
+        group_interval: 5m
+        repeat_interval: 12h
+        receiver: "null"
+    persistence:
+      enabled: true
+      size: 10Gi
+      storageClass: "gp3"
+  prometheus:
+    enabled: true
+    prometheusSpec:
+      replicas: 2
+      shards: 1
+      retention: "15d"
+      scrapeInterval: "30s"
+      evaluationInterval: "30s"
+      storageSpec:
+        volumeClaimTemplate:
+          spec:
+            storageClassName: "gp3"
+            resources:
+              requests:
+                storage: 50Gi
+      additionalScrapeConfigs:
+        - job_name: "kubernetes-pods"
+          kubernetes_sd_configs:
+            - role: pod
+          relabel_configs:
+            - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_scrape]
+              action: keep
+              regex: true
+            - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_path]
+              action: replace
+              target_label: __metrics_path__
+              regex: (.+)
+            - source_labels: [__address__, __meta_kubernetes_pod_annotation_prometheus_io_port]
+              action: replace
+              regex: ([^:]+)(?::\d+)?;(\d+)
+              replacement: $1:$2
+              target_label: __address__
+  grafana:
+    enabled: true
+    admin:
+      existingSecret: "grafana-admin"
+      userKey: admin-user
+      passwordKey: admin-password
+    persistence:
+      enabled: true
+      size: 10Gi
+      storageClass: "gp3"
+    serviceMonitor:
+      enabled: true
+    dashboards:
+      default:
+        dgsn-backend:
+          gnetId: 1
+          revision: 1
+          datasource: Prometheus
+        dgsn-redis:
+          gnetId: 763
+          revision: 5
+          datasource: Prometheus
+    dashboardProviders:
+      dashboardproviders.yaml:
+        apiVersion: 1
+        providers:
+          - name: "default"
+            orgId: 1
+            folder: ""
+            type: file
+            disableDeletion: false
+            editable: true
+            options:
+              path: /var/lib/grafana/dashboards/default
+    sidecar:
+      dashboards:
+        enabled: true
+        searchNamespace: ALL
+        label: grafana_dashboard
+      datasources:
+        enabled: true
+        searchNamespace: ALL
+        label: grafana_datasource
+  kube-state-metrics:
+    enabled: true
+  nodeExporter:
+    enabled: true
+    serviceMonitor:
+      enabled: true
+
+otel:
+  enabled: true
+
+opentelemetry-collector:
+  enabled: true
+  mode: daemonset
   image:
     repository: otel/opentelemetry-collector-contrib
-    tag: 0.112.0
+    tag: latest
+  command:
+    - "/otelcol-contrib"
+    - "--config=/conf/relay.yaml"
+  serviceAccount:
+    create: true
+  clusterRole:
+    create: true
+    rules:
+      - apiGroups: [""]
+        resources: ["pods", "nodes", "services", "endpoints", "namespaces"]
+        verbs: ["get", "list", "watch"]
+      - apiGroups: ["apps"]
+        resources: ["replicasets", "deployments", "statefulsets", "daemonsets"]
+        verbs: ["get", "list", "watch"]
   config:
     receivers:
       otlp:
@@ -43,145 +189,68 @@ otelCollector:
             endpoint: 0.0.0.0:4317
           http:
             endpoint: 0.0.0.0:4318
+      prometheus:
+        config:
+          scrape_configs:
+            - job_name: otel-collector
+              scrape_interval: 30s
+              static_configs:
+                - targets: ["0.0.0.0:8888"]
+      kubeletstats:
+        collection_interval: 20s
+        endpoint: "https://${env:K8S_NODE_NAME}:10250"
+        insecure_skip_verify: true
+      k8s_cluster:
+        collection_interval: 10s
     processors:
       batch:
-        timeout: 1s
-        send_batch_size: 1024
       memory_limiter:
-        check_interval: 1s
-        limit_mib: 512
+        limit_mib: 1536
+        spike_limit_mib: 512
+        check_interval: 5s
+      resourcedetection:
+        detectors: [env, system, gcp, eks]
+        timeout: 5s
+        override: false
+      k8sattributes:
+        extract:
+          metadata:
+            - k8s.namespace.name
+            - k8s.node.name
+            - k8s.pod.name
+            - k8s.pod.uid
+            - k8s.pod.start_time
+            - k8s.deployment.name
+            - k8s.statefulset.name
+            - k8s.daemonset.name
+            - k8s.cronjob.name
+            - k8s.job.name
+            - k8s.container.name
     exporters:
       prometheus:
-        endpoint: 0.0.0.0:8889
-      otlp:
-        endpoint: "dgsn-otel-collector:4317"
+        endpoint: "0.0.0.0:9464"
+      logging:
+        loglevel: info
+      otlphttp:
+        endpoint: "http://tempo.monitoring:3200"
         tls:
           insecure: true
+      loki:
+        endpoint: "http://loki.monitoring:3100/loki/api/v1/push"
     service:
       pipelines:
         traces:
           receivers: [otlp]
-          processors: [memory_limiter, batch]
-          exporters: [otlp]
+          processors: [memory_limiter, k8sattributes, resourcedetection, batch]
+          exporters: [otlphttp, logging]
         metrics:
-          receivers: [otlp]
-          processors: [memory_limiter, batch]
-          exporters: [prometheus, otlp]
+          receivers: [otlp, prometheus, kubeletstats, k8s_cluster]
+          processors: [memory_limiter, k8sattributes, resourcedetection, batch]
+          exporters: [prometheus, logging]
         logs:
           receivers: [otlp]
-          processors: [memory_limiter, batch]
-          exporters: [otlp]
-  resources:
-    requests:
-      cpu: 200m
-      memory: 256Mi
-    limits:
-      cpu: 1
-      memory: 1Gi
-
-prometheus:
-  enabled: true
-  alertmanager:
-    enabled: true
-    persistentVolume:
-      size: 5Gi
-  server:
-    persistentVolume:
-      size: 50Gi
-    retention: 15d
-    resources:
-      requests:
-        cpu: 500m
-        memory: 2Gi
-      limits:
-        cpu: 2
-        memory: 8Gi
-  kubeStateMetrics:
-    enabled: true
-  nodeExporter:
-    enabled: true
-  pushgateway:
-    enabled: false
-  serviceMonitors:
-    - name: dgsn-backend
-      selector:
-        matchLabels:
-          app.kubernetes.io/component: backend
-      endpoints:
-        - port: metrics
-          interval: 15s
-    - name: dgsn-crypto
-      selector:
-        matchLabels:
-          app.kubernetes.io/component: crypto
-      endpoints:
-        - port: metrics
-          interval: 15s
-
-grafana:
-  enabled: true
-  adminPassword: ""
-  persistence:
-    enabled: true
-    size: 10Gi
-  datasources:
-    - name: Prometheus
-      type: prometheus
-      url: http://dgsn-prometheus-server:80
-      access: proxy
-      isDefault: true
-    - name: Loki
-      type: loki
-      url: http://dgsn-loki:3100
-      access: proxy
-    - name: Tempo
-      type: tempo
-      url: http://dgsn-tempo:3200
-      access: proxy
-  dashboardProviders:
-    - name: dgsn
-      orgId: 1
-      folder: DGSN
-      type: file
-      options:
-        path: /var/lib/grafana/dashboards/dgsn
-  dashboards:
-    dgsn:
-      dgsn-overview:
-        url: https://raw.githubusercontent.com/dgsn/dashboards/main/dgsn-overview.json
-      quantum-metrics:
-        url: https://raw.githubusercontent.com/dgsn/dashboards/main/quantum-metrics.json
-      signal-processing:
-        url: https://raw.githubusercontent.com/dgsn/dashboards/main/signal-processing.json
-  resources:
-    requests:
-      cpu: 200m
-      memory: 256Mi
-    limits:
-      cpu: 1
-      memory: 1Gi
-
-minio:
-  enabled: true
-  mode: distributed
-  replicas: 4
-  persistence:
-    size: 100Gi
-  resources:
-    requests:
-      cpu: 500m
-      memory: 1Gi
-    limits:
-      cpu: 4
-      memory: 8Gi
-  buckets:
-    - name: dgsn-signals
-      policy: none
-    - name: dgsn-results
-      policy: none
-    - name: dgsn-backups
-      policy: none
-  users:
-    - accessKey: dgsn
-      secretKey: changeme
-      policy: readwrite
+          processors: [memory_limiter, k8sattributes, resourcedetection, batch]
+          exporters: [loki, logging]
+      telemetry:
+        metrics:
+          address: 0.0.0.0:8888

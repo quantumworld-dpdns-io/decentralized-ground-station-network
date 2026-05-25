@@ -2,6 +2,9 @@ name: crates.io Release
 on:
   release:
     types: [published]
+  pull_request:
+    branches: [main]
+    paths: ['src/crypto-kernel/**']
   workflow_dispatch:
     inputs:
       version:
@@ -14,22 +17,27 @@ env:
 jobs:
   crates:
     runs-on: ubuntu-latest
+    if: github.event_name == 'release' && contains(github.event.release.tag_name, 'crates')
     defaults:
       run:
         working-directory: ${{ env.WORKING_DIR }}
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Dry run publish
+        if: github.event_name == 'pull_request'
+        run: cargo publish --dry-run --token ${{ secrets.CARGO_REGISTRY_TOKEN }}
       - name: Verify version
+        if: github.event_name == 'release'
         run: |
           CARGO_VERSION=$(cargo metadata --format-version=1 --no-deps | python3 -c "import sys,json; print(json.load(sys.stdin)['packages'][0]['version'])")
-          RELEASE_VERSION="${{ github.event.release.tag_name || inputs.version }}"
+          RELEASE_VERSION="${{ github.event.release.tag_name }}"
           RELEASE_VERSION="${RELEASE_VERSION#v}"
           if [ "$CARGO_VERSION" != "$RELEASE_VERSION" ]; then
             echo "Version mismatch: Cargo.toml has $CARGO_VERSION, release is $RELEASE_VERSION"
             exit 1
           fi
-      - name: Package
-        run: cargo package
-      - name: Publish
+      - name: Publish to crates.io
+        if: github.event_name == 'release'
         run: cargo publish --token ${{ secrets.CARGO_REGISTRY_TOKEN }}

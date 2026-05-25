@@ -57,6 +57,70 @@ impl ProofSystem {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct VerificationResult {
+    pub verified: bool,
+    pub proof_system: ProofSystem,
+    pub verification_time_ms: u64,
+    pub public_inputs_checked: usize,
+}
+
+impl VerificationResult {
+    pub fn new(verified: bool, proof_system: ProofSystem) -> Self {
+        VerificationResult {
+            verified,
+            proof_system,
+            verification_time_ms: 0,
+            public_inputs_checked: 0,
+        }
+    }
+
+    pub fn with_verification_time(mut self, ms: u64) -> Self {
+        self.verification_time_ms = ms;
+        self
+    }
+
+    pub fn with_inputs_checked(mut self, count: usize) -> Self {
+        self.public_inputs_checked = count;
+        self
+    }
+}
+
+pub fn verify_proof(proof: &ZkpProof) -> ZkpResult<VerificationResult> {
+    let start = std::time::Instant::now();
+
+    match proof.proof_system {
+        ProofSystem::Noir => {
+            let vk = noir::NoirVerifyingKey {
+                circuit_hash: [0u8; 32],
+                verifying_data: Vec::new(),
+            };
+            let valid = noir::NoirBackend::verify_proof(&vk, proof, &[])?;
+            let elapsed = start.elapsed();
+            Ok(VerificationResult::new(valid, ProofSystem::Noir)
+                .with_verification_time(elapsed.as_millis() as u64)
+                .with_inputs_checked(proof.public_inputs.len()))
+        }
+        ProofSystem::RiscZero => {
+            let vk = risc_zero::RiscZeroVerifyingKey {
+                image_id: risc_zero::RiscZeroImageId::new("default", &[0u8; 32]),
+                verifying_data: Vec::new(),
+            };
+            let valid = risc_zero::RiscZeroBackend::verify_proof(&vk, proof, &[])?;
+            let elapsed = start.elapsed();
+            Ok(VerificationResult::new(valid, ProofSystem::RiscZero)
+                .with_verification_time(elapsed.as_millis() as u64)
+                .with_inputs_checked(proof.public_inputs.len()))
+        }
+        ProofSystem::Groth16 => Err(ZkpError::UnsupportedSystem(
+            "Groth16 verification not yet implemented".into(),
+        )),
+        ProofSystem::Plonk => Err(ZkpError::UnsupportedSystem(
+            "PLONK verification not yet implemented".into(),
+        )),
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum ProofType {
     Single(Vec<u8>),
     Batch(Vec<Vec<u8>>),
@@ -238,5 +302,28 @@ mod tests {
         assert_eq!(pub_inputs.len(), 4);
         let priv_inputs = witness.to_private_inputs();
         assert!(!priv_inputs.is_empty());
+    }
+
+    #[test]
+    fn test_verification_result() {
+        let result = VerificationResult::new(true, ProofSystem::Noir)
+            .with_verification_time(42)
+            .with_inputs_checked(4);
+        assert!(result.verified);
+        assert_eq!(result.verification_time_ms, 42);
+        assert_eq!(result.public_inputs_checked, 4);
+    }
+
+    #[test]
+    fn test_verify_proof_dispatcher() {
+        let proof = ZkpProof::new(
+            ProofSystem::Noir,
+            ProofType::Single(vec![0u8; 64]),
+            vec![],
+        );
+        let result = verify_proof(&proof);
+        assert!(result.is_ok());
+        let vr = result.unwrap();
+        assert_eq!(vr.proof_system, ProofSystem::Noir);
     }
 }

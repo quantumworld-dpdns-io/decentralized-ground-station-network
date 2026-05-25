@@ -1,0 +1,25 @@
+name: Dependency Review
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  dependency-review:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Dependency Review
+        uses: actions/dependency-review-action@v4
+        with:
+          fail-on-severity: high
+          allow-licenses: MIT,Apache-2.0,BSD-3-Clause,BSD-2-Clause,ISC,Unlicense
+          deny-licenses: GPL-3.0,AGPL-3.0
+          comment-summary-in-pr: true

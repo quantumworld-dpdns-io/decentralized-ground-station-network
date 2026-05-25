@@ -1,70 +1,117 @@
 replicaCount: 2
 
 image:
-  repository: ghcr.io/decentralized-ground-station-network/frontend
-  tag: latest
-  pullPolicy: Always
+  repository: ghcr.io/dgsn/frontend
+  pullPolicy: IfNotPresent
+  tag: "latest"
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
 
 serviceAccount:
   create: true
-  name: dgsn-frontend
+  annotations: {}
+  name: ""
+
+podAnnotations:
+  prometheus.io/scrape: "true"
+  prometheus.io/port: "3000"
 
 podSecurityContext:
   runAsNonRoot: true
-  runAsUser: 1001
-  fsGroup: 1001
+  runAsUser: 1000
+  fsGroup: 2000
 
 securityContext:
-  allowPrivilegeEscalation: false
   capabilities:
-    drop: [ALL]
+    drop:
+      - ALL
   readOnlyRootFilesystem: true
+  runAsNonRoot: true
+  runAsUser: 1000
 
 service:
   type: ClusterIP
   port: 3000
-  metricsPort: 9091
 
 ingress:
   enabled: true
-  className: nginx
+  className: "nginx"
   annotations:
-    cert-manager.io/cluster-issuer: letsencrypt-prod
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
     nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/proxy-body-size: "50m"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "120s"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "120s"
   hosts:
-    - host: app.dgsn.io
+    - host: app.dgsn.local
       paths:
         - path: /
           pathType: Prefix
   tls:
-    - hosts:
-        - app.dgsn.io
-      secretName: dgsn-app-tls
+    - secretName: dgsn-frontend-tls
+      hosts:
+        - app.dgsn.local
 
 resources:
-  limits:
-    cpu: 1
-    memory: 1Gi
   requests:
-    cpu: 200m
+    cpu: 250m
     memory: 256Mi
-
-config:
-  environment: production
-  apiUrl: https://api.dgsn.io
-  grpcUrl: grpc://api.dgsn.io:9090
-  wsUrl: wss://api.dgsn.io/ws
-  sentryDsn: ""
-  posthogKey: ""
-  featureFlags:
-    quantumDashboard: true
-    signalAnalysis: true
-    marketplace: true
-    aiAgents: true
-    darkMode: true
+  limits:
+    cpu: 1000m
+    memory: 1Gi
 
 autoscaling:
   enabled: true
   minReplicas: 2
-  maxReplicas: 10
-  targetCPUUtilizationPercentage: 70
+  maxReplicas: 6
+  targetCPUUtilizationPercentage: 80
+
+livenessProbe:
+  httpGet:
+    path: /
+    port: http
+  initialDelaySeconds: 30
+  periodSeconds: 10
+  timeoutSeconds: 5
+  failureThreshold: 3
+
+readinessProbe:
+  httpGet:
+    path: /
+    port: http
+  initialDelaySeconds: 10
+  periodSeconds: 5
+  timeoutSeconds: 3
+  failureThreshold: 3
+
+nodeSelector:
+  kubernetes.io/os: linux
+
+tolerations: []
+
+affinity:
+  podAntiAffinity:
+    preferredDuringSchedulingIgnoredDuringExecution:
+      - weight: 100
+        podAffinityTerm:
+          labelSelector:
+            matchExpressions:
+              - key: app.kubernetes.io/name
+                operator: In
+                values:
+                  - dgsn-frontend
+          topologyKey: kubernetes.io/hostname
+
+env:
+  NODE_ENV: production
+  NEXT_TELEMETRY_DISABLED: "1"
+
+nextjs:
+  publicRuntimeConfig:
+    apiUrl: "https://api.dgsn.local"
+    wsUrl: "wss://api.dgsn.local"
+    env: "production"
+    enableAnalytics: "false"
+    enableSentry: "false"

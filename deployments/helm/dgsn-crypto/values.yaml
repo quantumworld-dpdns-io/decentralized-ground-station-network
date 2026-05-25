@@ -1,61 +1,133 @@
 replicaCount: 2
 
 image:
-  repository: ghcr.io/decentralized-ground-station-network/crypto
-  tag: latest
-  pullPolicy: Always
+  repository: ghcr.io/dgsn/crypto
+  pullPolicy: IfNotPresent
+  tag: "latest"
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
 
 serviceAccount:
   create: true
-  name: dgsn-crypto
+  annotations: {}
+  name: ""
+
+podAnnotations:
+  prometheus.io/scrape: "true"
+  prometheus.io/port: "50051"
 
 podSecurityContext:
   runAsNonRoot: true
-  runAsUser: 1001
-  fsGroup: 1001
+  runAsUser: 1000
+  fsGroup: 2000
 
 securityContext:
-  allowPrivilegeEscalation: false
   capabilities:
     drop:
       - ALL
   readOnlyRootFilesystem: true
+  runAsNonRoot: true
+  runAsUser: 1000
 
 service:
   type: ClusterIP
-  port: 8090
-  metricsPort: 9091
+  port: 50051
 
 resources:
-  limits:
-    cpu: 4
-    memory: 8Gi
   requests:
-    cpu: 1
+    cpu: 500m
+    memory: 512Mi
+  limits:
+    cpu: 2
     memory: 2Gi
-
-config:
-  environment: production
-  logLevel: info
-  pqc:
-    enabled: true
-    kemAlgorithm: kyber-1024
-    signatureAlgorithm: dilithium-5
-    hybridMode: true
-    tlsMinVersion: "1.3"
-    supportedCurves:
-      - X25519MLKEM768
-      - secp384r1
-      - X448
-  rateLimit:
-    enabled: true
-    requestsPerSecond: 1000
-  telemetry:
-    enabled: true
-    otlpEndpoint: dgsn-otel-collector:4317
 
 autoscaling:
   enabled: true
   minReplicas: 2
-  maxReplicas: 10
-  targetCPUUtilizationPercentage: 75
+  maxReplicas: 8
+  targetCPUUtilizationPercentage: 80
+
+livenessProbe:
+  grpc:
+    port: 50051
+  initialDelaySeconds: 30
+  periodSeconds: 10
+  timeoutSeconds: 5
+  failureThreshold: 3
+
+readinessProbe:
+  grpc:
+    port: 50051
+  initialDelaySeconds: 10
+  periodSeconds: 5
+  timeoutSeconds: 3
+  failureThreshold: 3
+
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 1
+
+nodeSelector:
+  kubernetes.io/os: linux
+
+tolerations: []
+
+affinity:
+  podAntiAffinity:
+    preferredDuringSchedulingIgnoredDuringExecution:
+      - weight: 100
+        podAffinityTerm:
+          labelSelector:
+            matchExpressions:
+              - key: app.kubernetes.io/name
+                operator: In
+                values:
+                  - dgsn-crypto
+          topologyKey: kubernetes.io/hostname
+
+env:
+  LOG_LEVEL: info
+  ENVIRONMENT: production
+
+pqc:
+  enabled: true
+  defaultAlgorithm: CRYSTALS-KYBER-1024
+  securityLevel: 5
+  algorithms:
+    - name: CRYSTALS-KYBER-512
+      securityLevel: 1
+      enabled: true
+    - name: CRYSTALS-KYBER-768
+      securityLevel: 3
+      enabled: true
+    - name: CRYSTALS-KYBER-1024
+      securityLevel: 5
+      enabled: true
+    - name: SPHINCS+-SHA2-128f
+      securityLevel: 1
+      enabled: true
+    - name: SPHINCS+-SHA2-256f
+      securityLevel: 5
+      enabled: true
+    - name: CRYSTALS-DILITHIUM-2
+      securityLevel: 2
+      enabled: true
+    - name: CRYSTALS-DILITHIUM-3
+      securityLevel: 3
+      enabled: true
+    - name: CRYSTALS-DILITHIUM-5
+      securityLevel: 5
+      enabled: true
+
+tls:
+  enabled: true
+  pqcEnabled: true
+  certPath: /app/certs/tls.crt
+  keyPath: /app/certs/tls.key
+
+metrics:
+  enabled: true
+  port: 9090
+  path: /metrics

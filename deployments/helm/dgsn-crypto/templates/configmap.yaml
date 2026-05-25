@@ -1,0 +1,28 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "dgsn-crypto.fullname" . }}-config
+  labels:
+    {{- include "dgsn-crypto.labels" . | nindent 4 }}
+data:
+  pqc.yaml: |
+    enabled: {{ .Values.pqc.enabled }}
+    defaultAlgorithm: {{ .Values.pqc.defaultAlgorithm }}
+    securityLevel: {{ .Values.pqc.securityLevel }}
+    algorithms:
+      {{- range .Values.pqc.algorithms }}
+      - name: {{ .name }}
+        securityLevel: {{ .securityLevel }}
+        enabled: {{ .enabled }}
+      {{- end }}
+
+  tls.yaml: |
+    enabled: {{ .Values.tls.enabled }}
+    pqcEnabled: {{ .Values.tls.pqcEnabled }}
+    certPath: {{ .Values.tls.certPath }}
+    keyPath: {{ .Values.tls.keyPath }}
+
+  metrics.yaml: |
+    enabled: {{ .Values.metrics.enabled }}
+    port: {{ .Values.metrics.port }}
+    path: {{ .Values.metrics.path }}

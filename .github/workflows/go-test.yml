@@ -1,0 +1,60 @@
+name: Go Test
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  GO_VERSION: '1.22'
+  WORKING_DIR: src/backend
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ${{ env.WORKING_DIR }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+          cache-dependency-path: ${{ env.WORKING_DIR }}/go.sum
+      - name: Tidy modules
+        run: go mod tidy
+      - name: Unit tests
+        run: go test -v -race -count=1 -coverprofile=coverage.out ./...
+      - name: Upload coverage
+        uses: codecov/codecov-action@v4
+        with:
+          file: ${{ env.WORKING_DIR }}/coverage.out
+          flags: go
+
+  integration:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ${{ env.WORKING_DIR }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+          cache-dependency-path: ${{ env.WORKING_DIR }}/go.sum
+      - name: Start dependencies
+        run: docker compose -f ../../deployments/docker/docker-compose.yml up -d postgres redis
+      - name: Wait for services
+        run: sleep 10
+      - name: Integration tests
+        run: go test -v -tags=integration -count=1 ./...
+      - name: Stop services
+        if: always()
+        run: docker compose -f ../../deployments/docker/docker-compose.yml down

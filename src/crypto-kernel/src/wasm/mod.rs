@@ -125,6 +125,110 @@ impl WasmCrypto {
     }
 }
 
+#[wasm_bindgen]
+pub fn verify_receipt(receipt_json: &str, signature_hex: &str, public_key_hex: &str) -> bool {
+    let signature = match hex::decode(signature_hex) {
+        Ok(s) => s,
+        Err(_) => return false,
+    };
+    let public_key = match hex::decode(public_key_hex) {
+        Ok(pk) => pk,
+        Err(_) => return false,
+    };
+    let receipt_bytes = receipt_json.as_bytes();
+
+    let algorithm = Algorithm::MLDSA65;
+    pqc::verify(&algorithm, receipt_bytes, &signature, &public_key).unwrap_or(false)
+}
+
+#[wasm_bindgen]
+pub fn generate_keypair() -> JsValue {
+    let result = js_sys::Object::new();
+
+    let algorithm = Algorithm::MLDSA65;
+    match pqc::keygen(algorithm) {
+        Ok((pk, sk)) => {
+            let pk_hex = hex::encode(&pk);
+            let sk_hex = hex::encode(&sk);
+            js_sys::Reflect::set(&result, &JsValue::from_str("publicKey"), &JsValue::from_str(&pk_hex)).ok();
+            js_sys::Reflect::set(&result, &JsValue::from_str("secretKey"), &JsValue::from_str(&sk_hex)).ok();
+            js_sys::Reflect::set(&result, &JsValue::from_str("algorithm"), &JsValue::from_str("ML-DSA-65")).ok();
+        }
+        Err(e) => {
+            js_sys::Reflect::set(&result, &JsValue::from_str("error"), &JsValue::from_str(&e.to_string())).ok();
+        }
+    }
+
+    JsValue::from(result)
+}
+
+#[wasm_bindgen]
+pub fn merkle_proof(leaves: Vec<String>, index: usize) -> JsValue {
+    let result = js_sys::Object::new();
+
+    let leaf_bytes: Vec<Vec<u8>> = leaves.iter().map(|s| s.as_bytes().to_vec()).collect();
+
+    if index >= leaf_bytes.len() {
+        js_sys::Reflect::set(
+            &result,
+            &JsValue::from_str("error"),
+            &JsValue::from_str("index out of bounds"),
+        ).ok();
+        return JsValue::from(result);
+    }
+
+    match MerkleTree::from_leaves(&leaf_bytes) {
+        Ok(tree) => {
+            let root_hex = hex::encode(tree.root().unwrap_or(&[]));
+            js_sys::Reflect::set(&result, &JsValue::from_str("root"), &JsValue::from_str(&root_hex)).ok();
+
+            match tree.generate_proof(index) {
+                Ok(proof) => {
+                    let siblings_hex: Vec<String> = proof.siblings.iter().map(|s| hex::encode(s)).collect();
+                    let siblings_arr = js_sys::Array::new();
+                    for s in &siblings_hex {
+                        siblings_arr.push(&JsValue::from_str(s));
+                    }
+                    js_sys::Reflect::set(&result, &JsValue::from_str("siblings"), &siblings_arr).ok();
+                    js_sys::Reflect::set(
+                        &result,
+                        &JsValue::from_str("leafIndex"),
+                        &JsValue::from_f64(proof.leaf_index as f64),
+                    ).ok();
+                    js_sys::Reflect::set(
+                        &result,
+                        &JsValue::from_str("leaf"),
+                        &JsValue::from_str(&hex::encode(&proof.leaf)),
+                    ).ok();
+
+                    let path_bits: Vec<bool> = proof.path;
+                    let path_arr = js_sys::Array::new();
+                    for bit in &path_bits {
+                        path_arr.push(&JsValue::from_bool(*bit));
+                    }
+                    js_sys::Reflect::set(&result, &JsValue::from_str("path"), &path_arr).ok();
+                }
+                Err(e) => {
+                    js_sys::Reflect::set(
+                        &result,
+                        &JsValue::from_str("error"),
+                        &JsValue::from_str(&e.to_string()),
+                    ).ok();
+                }
+            }
+        }
+        Err(e) => {
+            js_sys::Reflect::set(
+                &result,
+                &JsValue::from_str("error"),
+                &JsValue::from_str(&e.to_string()),
+            ).ok();
+        }
+    }
+
+    JsValue::from(result)
+}
+
 fn parse_algorithm(name: &str) -> Result<Algorithm, JsValue> {
     match name {
         "ML-KEM-512" => Ok(Algorithm::MLKEM512),

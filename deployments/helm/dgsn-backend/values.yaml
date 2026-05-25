@@ -1,128 +1,155 @@
 replicaCount: 3
 
 image:
-  repository: ghcr.io/decentralized-ground-station-network/backend
-  tag: latest
-  pullPolicy: Always
-  pullSecrets:
-    - name: ghcr-secret
+  repository: ghcr.io/dgsn/backend
+  pullPolicy: IfNotPresent
+  tag: "latest"
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
 
 serviceAccount:
   create: true
   annotations: {}
-  name: dgsn-backend
+  name: ""
 
 podAnnotations:
   prometheus.io/scrape: "true"
-  prometheus.io/port: "9090"
-  sidecar.istio.io/inject: "true"
+  prometheus.io/port: "8080"
+  prometheus.io/path: "/metrics"
 
 podSecurityContext:
   runAsNonRoot: true
-  runAsUser: 1001
-  fsGroup: 1001
-  seccompProfile:
-    type: RuntimeDefault
+  runAsUser: 1000
+  fsGroup: 2000
 
 securityContext:
-  allowPrivilegeEscalation: false
   capabilities:
     drop:
       - ALL
   readOnlyRootFilesystem: true
+  runAsNonRoot: true
+  runAsUser: 1000
 
 service:
   type: ClusterIP
-  httpPort: 8080
-  grpcPort: 9090
-  metricsPort: 9091
+  port: 8080
+  grpc:
+    port: 50051
 
 ingress:
   enabled: true
-  className: nginx
+  className: "nginx"
   annotations:
-    cert-manager.io/cluster-issuer: letsencrypt-prod
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
     nginx.ingress.kubernetes.io/ssl-redirect: "true"
-    nginx.ingress.kubernetes.io/backend-protocol: "GRPC"
+    nginx.ingress.kubernetes.io/backend-protocol: "HTTP"
   hosts:
-    - host: api.dgsn.io
+    - host: api.dgsn.local
       paths:
-        - path: /
+        - path: /api
           pathType: Prefix
-          servicePort: http
+        - path: /healthz
+          pathType: Prefix
+        - path: /metrics
+          pathType: Prefix
   tls:
-    - hosts:
-        - api.dgsn.io
-      secretName: dgsn-api-tls
+    - secretName: dgsn-backend-tls
+      hosts:
+        - api.dgsn.local
 
 resources:
-  limits:
-    cpu: 2
-    memory: 4Gi
   requests:
     cpu: 500m
-    memory: 1Gi
+    memory: 512Mi
+  limits:
+    cpu: 2
+    memory: 2Gi
 
 autoscaling:
   enabled: true
   minReplicas: 3
-  maxReplicas: 20
-  targetCPUUtilizationPercentage: 75
-  targetMemoryUtilizationPercentage: 85
+  maxReplicas: 10
+  targetCPUUtilizationPercentage: 80
+  targetMemoryUtilizationPercentage: 80
 
-probes:
-  liveness:
+livenessProbe:
+  httpGet:
     path: /healthz
     port: http
-    initialDelaySeconds: 10
-    periodSeconds: 30
-  readiness:
+  initialDelaySeconds: 30
+  periodSeconds: 10
+  timeoutSeconds: 5
+  failureThreshold: 3
+
+readinessProbe:
+  httpGet:
     path: /readyz
     port: http
-    initialDelaySeconds: 5
-    periodSeconds: 10
-  startup:
-    path: /startupz
-    port: http
-    initialDelaySeconds: 15
-    periodSeconds: 5
-    failureThreshold: 30
+  initialDelaySeconds: 10
+  periodSeconds: 5
+  timeoutSeconds: 3
+  failureThreshold: 3
 
-config:
-  environment: production
-  logLevel: info
-  logFormat: json
-  database:
-    host: dgsn-db
-    port: 5432
-    name: dgsn
-    poolMin: 5
-    poolMax: 25
-  redis:
-    host: dgsn-redis
-    port: 6379
-    db: 0
-  grpc:
-    maxRecvMsgSize: 50MB
-    maxSendMsgSize: 50MB
-  quantum:
-    enabled: true
-    simulator: qiskit
-    backend: ibmq_qasm_simulator
-  crypto:
-    pqcEnabled: true
-    kemAlgorithm: kyber-1024
-    signatureAlgorithm: dilithium-5
-  rateLimit:
-    enabled: true
-    requestsPerSecond: 100
-    burstSize: 200
-  telemetry:
-    enabled: true
-    otlpEndpoint: dgsn-otel-collector:4317
-    tracesSampleRate: 0.1
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 2
 
-nodeSelector: {}
+networkPolicy:
+  enabled: true
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: dgsn-frontend
+      ports:
+        - port: 8080
+          protocol: TCP
+        - port: 50051
+          protocol: TCP
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              name: monitoring
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: prometheus
+      ports:
+        - port: 8080
+          protocol: TCP
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: dgsn-crypto
+      ports:
+        - port: 50051
+          protocol: TCP
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: dgsn-quantum
+      ports:
+        - port: 50052
+          protocol: TCP
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: dgsn-signal
+      ports:
+        - port: 50053
+          protocol: TCP
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: redis
+      ports:
+        - port: 6379
+          protocol: TCP
+
+nodeSelector:
+  kubernetes.io/os: linux
 
 tolerations: []
 
@@ -138,3 +165,56 @@ affinity:
                 values:
                   - dgsn-backend
           topologyKey: kubernetes.io/hostname
+
+env:
+  LOG_LEVEL: info
+  ENVIRONMENT: production
+  ENABLE_METRICS: "true"
+  ENABLE_TRACING: "true"
+
+config:
+  server:
+    httpPort: 8080
+    grpcPort: 50051
+    readTimeout: 30s
+    writeTimeout: 30s
+    shutdownTimeout: 15s
+
+  auth:
+    enabled: true
+    jwtSecret: ""
+    tokenExpiry: 24h
+
+  logging:
+    level: info
+    format: json
+
+  metrics:
+    enabled: true
+    path: /metrics
+
+  tracing:
+    enabled: true
+    endpoint: "otel-collector:4317"
+    serviceName: "dgsn-backend"
+
+redis:
+  host: "redis-master"
+  port: 6379
+  password: ""
+  db: 0
+  poolSize: 20
+  minIdleConns: 5
+
+minio:
+  endpoint: "minio:9000"
+  accessKey: ""
+  secretKey: ""
+  useSSL: false
+  bucket: "dgsn-signals"
+
+grpc:
+  services:
+    crypto: "dgsn-crypto:50051"
+    quantum: "dgsn-quantum:50052"
+    signal: "dgsn-signal:50053"

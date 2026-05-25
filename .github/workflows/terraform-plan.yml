@@ -21,12 +21,15 @@ jobs:
     defaults:
       run:
         working-directory: ${{ env.TF_DIR }}/environments/${{ matrix.environment }}
+    permissions:
+      contents: read
+      pull-requests: write
     steps:
       - uses: actions/checkout@v4
       - uses: hashicorp/setup-terraform@v3
         with:
           terraform_version: 1.9
-      - name: Terraform fmt
+      - name: Terraform fmt check
         run: terraform fmt -check -recursive
       - name: Terraform init
         run: |
@@ -45,19 +48,19 @@ jobs:
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-      - name: Upload plan
+      - name: Upload plan artifact
         uses: actions/upload-artifact@v4
         with:
           name: tfplan-${{ matrix.environment }}
           path: ${{ env.TF_DIR }}/environments/${{ matrix.environment }}/tfplan
-      - name: Post plan to PR
+      - name: Comment PR with plan output
         uses: actions/github-script@v7
         if: github.event_name == 'pull_request'
         with:
           script: |
             const fs = require('fs');
             const plan = fs.readFileSync('tfplan', 'utf8');
-            const output = `## Terraform Plan: ${{ matrix.environment }}\n\`\`\`\n${plan.substring(0, 60000)}\n\`\`\``;
+            const output = `## Terraform Plan: ${{ matrix.environment }}\n\`\`\`diff\n${plan.substring(0, 60000)}\n\`\`\``;
             github.rest.issues.createComment({
               issue_number: context.issue.number,
               owner: context.repo.owner,

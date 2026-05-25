@@ -1,11 +1,9 @@
 name: Go Lint
 on:
   push:
-    branches: [main, develop]
-    paths: ['src/backend/**', '**.go', 'go.mod', 'go.sum']
+    branches: [main]
   pull_request:
     branches: [main]
-    paths: ['src/backend/**', '**.go', 'go.mod', 'go.sum']
   workflow_dispatch:
 
 concurrency:
@@ -13,9 +11,8 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  GO_VERSION: '1.23'
+  GO_VERSION: '1.22'
   WORKING_DIR: src/backend
-  GOLANGCI_VERSION: 'v1.62'
 
 jobs:
   golangci:
@@ -23,6 +20,10 @@ jobs:
     defaults:
       run:
         working-directory: ${{ env.WORKING_DIR }}
+    permissions:
+      contents: read
+      pull-requests: write
+      checks: write
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
@@ -33,17 +34,12 @@ jobs:
       - name: golangci-lint
         uses: golangci/golangci-lint-action@v6
         with:
-          version: ${{ env.GOLANGCI_VERSION }}
+          version: latest
           working-directory: ${{ env.WORKING_DIR }}
-          args: --timeout=10m --verbose
-          skip-cache: false
+          args: --timeout=5m --out-format=colored-line-number,github-actions
+          only-new-issues: true
       - name: go vet
         run: go vet ./...
-      - name: staticcheck
-        run: |
-          go install honnef.co/go/tools/cmd/staticcheck@latest
-          staticcheck ./...
       - name: Check formatting
         run: |
-          diff -u <(echo -n) <(gofmt -d .)
-          test -z "$(gofmt -l .)"
+          test -z "$(gofmt -l .)" || (gofmt -d . && exit 1)

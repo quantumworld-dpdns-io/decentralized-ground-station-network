@@ -1,58 +1,20 @@
 {
-  "title": "DGSN Ground Station Network Overview",
-  "version": 1,
+  "title": "DGSN - Ground Station Overview",
+  "version": 2,
   "uid": "dgsn-overview",
   "description": "Comprehensive overview of all ground station services, receipts, and infrastructure health",
   "tags": ["dgsn", "ground-station", "overview"],
   "timezone": "utc",
   "editable": false,
+  "refresh": "30s",
   "panels": [
     {
-      "title": "Service Uptime",
+      "title": "Total Stations",
       "type": "stat",
       "gridPos": {"h": 4, "w": 4, "x": 0, "y": 0},
       "targets": [
-        {"expr": "sum(up)", "legendFormat": "Services Up"},
-        {"expr": "count(up) - sum(up)", "legendFormat": "Services Down"}
+        {"expr": "count(dgsn_stations_active)", "legendFormat": "Active"}
       ],
-      "fieldConfig": {
-        "defaults": {
-          "color": {"mode": "thresholds"},
-          "thresholds": {"mode": "absolute", "steps": [{"color": "red", "value": 0}, {"color": "green", "value": 1}]}
-        }
-      }
-    },
-    {
-      "title": "Receipts Created (24h)",
-      "type": "stat",
-      "gridPos": {"h": 4, "w": 4, "x": 4, "y": 0},
-      "targets": [{"expr": "sum(increase(dgsn_receipts_created_total[24h]))"}],
-      "fieldConfig": {
-        "defaults": {
-          "unit": "short",
-          "color": {"mode": "thresholds"},
-          "thresholds": {"mode": "absolute", "steps": [{"color": "red", "value": 0}, {"color": "green", "value": 1}]}
-        }
-      }
-    },
-    {
-      "title": "Receipt Verification Rate",
-      "type": "stat",
-      "gridPos": {"h": 4, "w": 4, "x": 8, "y": 0},
-      "targets": [{"expr": "dgsn:receipt_verification_success_rate_5m"}],
-      "fieldConfig": {
-        "defaults": {
-          "unit": "percentunit",
-          "color": {"mode": "thresholds"},
-          "thresholds": {"mode": "absolute", "steps": [{"color": "red", "value": 0}, {"color": "yellow", "value": 0.95}, {"color": "green", "value": 0.99}]}
-        }
-      }
-    },
-    {
-      "title": "Active Stations",
-      "type": "stat",
-      "gridPos": {"h": 4, "w": 4, "x": 12, "y": 0},
-      "targets": [{"expr": "count(dgsn_stations_active)"}],
       "fieldConfig": {
         "defaults": {
           "unit": "short",
@@ -62,23 +24,148 @@
       }
     },
     {
-      "title": "API Request Rate",
+      "title": "Active Receipts (24h)",
       "type": "stat",
-      "gridPos": {"h": 4, "w": 4, "x": 16, "y": 0},
-      "targets": [{"expr": "dgsn:api_requests_per_second:rate5m"}],
+      "gridPos": {"h": 4, "w": 4, "x": 4, "y": 0},
+      "targets": [
+        {"expr": "sum(increase(dgsn_receipts_created_total[24h]))", "legendFormat": "Receipts"}
+      ],
       "fieldConfig": {
         "defaults": {
-          "unit": "reqps",
+          "unit": "short",
           "color": {"mode": "thresholds"},
-          "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": 0}, {"color": "yellow", "value": 100}, {"color": "red", "value": 1000}]}
+          "thresholds": {"mode": "absolute", "steps": [{"color": "red", "value": 0}, {"color": "green", "value": 1}]}
+        }
+      }
+    },
+    {
+      "title": "Quantum Jobs Running",
+      "type": "stat",
+      "gridPos": {"h": 4, "w": 4, "x": 8, "y": 0},
+      "targets": [
+        {"expr": "dgsn_quantum_active_circuits", "legendFormat": "Active"}
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {"mode": "thresholds"},
+          "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": 0}, {"color": "yellow", "value": 5}, {"color": "red", "value": 20}]}
+        }
+      }
+    },
+    {
+      "title": "Error Rate (5m)",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 4},
+      "targets": [
+        {"expr": "rate(dgsn_api_requests_total{status=~\"5..\"}[5m])", "legendFormat": "5xx errors"},
+        {"expr": "rate(dgsn_api_requests_total[5m])", "legendFormat": "Total requests"}
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops",
+          "color": {"mode": "palette-classic"},
+          "custom": {"showPoints": "never", "lineInterpolation": "smooth"}
+        }
+      }
+    },
+    {
+      "title": "Request Latency Heatmap",
+      "type": "heatmap",
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 4},
+      "targets": [
+        {"expr": "sum(rate(dgsn_api_request_duration_seconds_bucket[5m])) by (le)"}
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "scheme", "scheme": "turbo"}
+        }
+      }
+    },
+    {
+      "title": "Station Uptime",
+      "type": "table",
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 12},
+      "targets": [
+        {"expr": "avg_over_time(up{service=~\"dgsn-.*\"}[30d]) * 100", "legendFormat": "{{service}}"}
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "color": {"mode": "thresholds"},
+          "thresholds": {"mode": "absolute", "steps": [{"color": "red", "value": 0}, {"color": "yellow", "value": 99}, {"color": "green", "value": 99.9}]},
+          "custom": {"align": "auto"}
+        }
+      }
+    },
+    {
+      "title": "Receipt Verification Rate",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 12},
+      "targets": [
+        {"expr": "dgsn:receipt_verification_success_rate_5m", "legendFormat": "Success rate"}
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "color": {"mode": "thresholds"},
+          "thresholds": {"mode": "absolute", "steps": [{"color": "red", "value": 0}, {"color": "yellow", "value": 0.95}, {"color": "green", "value": 0.99}]},
+          "custom": {"showPoints": "never"}
+        }
+      }
+    },
+    {
+      "title": "Schedule Conflicts",
+      "type": "stat",
+      "gridPos": {"h": 4, "w": 4, "x": 0, "y": 20},
+      "targets": [
+        {"expr": "dgsn_schedule_conflicts_total", "legendFormat": "Conflicts"}
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {"mode": "thresholds"},
+          "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": 0}, {"color": "yellow", "value": 1}, {"color": "red", "value": 5}]}
+        }
+      }
+    },
+    {
+      "title": "Quantum Circuit Fidelity",
+      "type": "gauge",
+      "gridPos": {"h": 4, "w": 4, "x": 4, "y": 20},
+      "targets": [
+        {"expr": "dgsn_quantum_fidelity_avg", "legendFormat": "Avg fidelity"}
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "color": {"mode": "thresholds"},
+          "thresholds": {"mode": "absolute", "steps": [{"color": "red", "value": 0}, {"color": "yellow", "value": 0.8}, {"color": "green", "value": 0.95}]}
+        }
+      }
+    },
+    {
+      "title": "Top Stations by Reliability",
+      "type": "bargauge",
+      "gridPos": {"h": 4, "w": 8, "x": 8, "y": 20},
+      "targets": [
+        {"expr": "topk(10, avg_over_time(dgsn_station_reliability_score[7d]))", "legendFormat": "{{station}}"}
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "color": {"mode": "thresholds"},
+          "thresholds": {"mode": "absolute", "steps": [{"color": "red", "value": 0}, {"color": "yellow", "value": 80}, {"color": "green", "value": 95}]}
         }
       }
     },
     {
       "title": "Services Down",
       "type": "stat",
-      "gridPos": {"h": 4, "w": 4, "x": 20, "y": 0},
-      "targets": [{"expr": "dgsn:services_down_count"}],
+      "gridPos": {"h": 4, "w": 4, "x": 16, "y": 20},
+      "targets": [
+        {"expr": "dgsn:services_down_count", "legendFormat": "Down"}
+      ],
       "fieldConfig": {
         "defaults": {
           "color": {"mode": "thresholds"},
@@ -87,112 +174,17 @@
       }
     },
     {
-      "title": "API Latency (p95)",
-      "type": "timeseries",
-      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 4},
-      "targets": [{"expr": "dgsn:api_request_duration_seconds:p95_5m", "legendFormat": "{{route}}"}],
-      "fieldConfig": {
-        "defaults": {
-          "unit": "s",
-          "color": {"mode": "palette-classic"},
-          "custom": {"showPoints": "never"}
-        }
-      }
-    },
-    {
-      "title": "Receipt Processing Rate",
-      "type": "timeseries",
-      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 4},
+      "title": "API Request Rate",
+      "type": "stat",
+      "gridPos": {"h": 4, "w": 4, "x": 20, "y": 20},
       "targets": [
-        {"expr": "rate(dgsn_receipts_created_total[5m])", "legendFormat": "Created"},
-        {"expr": "rate(dgsn_receipts_verify_total[5m])", "legendFormat": "Verified"}
+        {"expr": "dgsn:api_requests_per_second:rate5m", "legendFormat": "req/s"}
       ],
       "fieldConfig": {
         "defaults": {
-          "unit": "ops",
-          "color": {"mode": "palette-classic"},
-          "custom": {"showPoints": "never"}
-        }
-      }
-    },
-    {
-      "title": "Crypto Operations",
-      "type": "timeseries",
-      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 12},
-      "targets": [
-        {"expr": "rate(dgsn_crypto_operations_total[5m])", "legendFormat": "{{algorithm}} {{operation}}"}
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "unit": "ops",
-          "color": {"mode": "palette-classic"},
-          "custom": {"showPoints": "never"}
-        }
-      }
-    },
-    {
-      "title": "Signal Throughput",
-      "type": "timeseries",
-      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 12},
-      "targets": [
-        {"expr": "dgsn:signal_throughput_bytes_per_second:rate5m"}
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "unit": "Bps",
-          "color": {"mode": "palette-classic"},
-          "custom": {"showPoints": "never"}
-        }
-      }
-    },
-    {
-      "title": "Node CPU Usage",
-      "type": "gauge",
-      "gridPos": {"h": 6, "w": 4, "x": 0, "y": 20},
-      "targets": [{"expr": "dgsn:node_cpu_usage_ratio * 100"}],
-      "fieldConfig": {
-        "defaults": {
-          "unit": "percent",
+          "unit": "reqps",
           "color": {"mode": "thresholds"},
-          "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": 0}, {"color": "yellow", "value": 60}, {"color": "red", "value": 85}]}
-        }
-      }
-    },
-    {
-      "title": "Node Memory Usage",
-      "type": "gauge",
-      "gridPos": {"h": 6, "w": 4, "x": 4, "y": 20},
-      "targets": [{"expr": "dgsn:node_memory_usage_ratio * 100"}],
-      "fieldConfig": {
-        "defaults": {
-          "unit": "percent",
-          "color": {"mode": "thresholds"},
-          "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": 0}, {"color": "yellow", "value": 70}, {"color": "red", "value": 90}]}
-        }
-      }
-    },
-    {
-      "title": "Node Disk Usage",
-      "type": "gauge",
-      "gridPos": {"h": 6, "w": 4, "x": 8, "y": 20},
-      "targets": [{"expr": "dgsn:node_disk_usage_ratio * 100"}],
-      "fieldConfig": {
-        "defaults": {
-          "unit": "percent",
-          "color": {"mode": "thresholds"},
-          "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": 0}, {"color": "yellow", "value": 70}, {"color": "red", "value": 85}]}
-        }
-      }
-    },
-    {
-      "title": "Recent Alerts",
-      "type": "table",
-      "gridPos": {"h": 6, "w": 12, "x": 12, "y": 20},
-      "targets": [{"expr": "ALERTS{alertstate=\"firing\"}", "legendFormat": "{{alertname}}"}],
-      "fieldConfig": {
-        "defaults": {
-          "color": {"mode": "thresholds"},
-          "custom": {"align": "auto"}
+          "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": 0}, {"color": "yellow", "value": 100}, {"color": "red", "value": 1000}]}
         }
       }
     }
@@ -204,6 +196,13 @@
         "type": "datasource",
         "query": "prometheus",
         "current": {"value": "Prometheus"}
+      },
+      {
+        "name": "station",
+        "type": "query",
+        "query": "label_values(dgsn_stations_active, station)",
+        "multi": true,
+        "includeAll": true
       }
     ]
   }

@@ -1,11 +1,9 @@
 name: Proto Lint
 on:
   push:
-    branches: [main, develop]
-    paths: ['**/*.proto']
+    branches: [main]
   pull_request:
     branches: [main]
-    paths: ['**/*.proto']
   workflow_dispatch:
 
 concurrency:
@@ -15,23 +13,35 @@ concurrency:
 jobs:
   buf:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
     steps:
       - uses: actions/checkout@v4
       - uses: bufbuild/buf-setup-action@v1
         with:
           version: latest
-      - name: Lint
+      - name: Buf lint
         uses: bufbuild/buf-lint-action@v1
         with:
           input: 'proto'
-      - name: Check breaking changes
+      - name: Check breaking changes against main
         uses: bufbuild/buf-breaking-action@v1
         with:
           input: 'proto'
           against: 'https://github.com/${{ github.repository }}.git#branch=main,ref=refs/heads/main,subdir=proto'
-      - name: Generate
-        run: |
-          buf generate proto
-          buf mod update proto
+      - name: Generate from proto
+        run: buf generate proto
       - name: Format check
         run: buf format -d proto
+      - name: Comment PR with breaking changes
+        if: failure() && github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: '⚠️ **Proto breaking changes detected.** Please review the buf breaking output above.'
+            })

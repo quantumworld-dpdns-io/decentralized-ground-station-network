@@ -16,6 +16,18 @@ categories:
       - 'security'
       - 'pqc'
       - 'cryptography'
+  - title: '🧪 Tests'
+    labels:
+      - 'test'
+      - 'testing'
+      - 'e2e'
+      - 'integration'
+  - title: '📚 Documentation'
+    labels:
+      - 'documentation'
+      - 'docs'
+      - 'adr'
+      - 'rfc'
   - title: '⚡ Performance'
     labels:
       - 'performance'
@@ -27,38 +39,12 @@ categories:
       - 'refactor'
       - 'dependencies'
       - 'ci'
-      - 'documentation'
-      - 'docs'
-  - title: '🧪 Testing'
-    labels:
-      - 'test'
-      - 'testing'
-      - 'e2e'
-      - 'integration'
-  - title: '🌍 Multi-Cloud'
+  - title: '🌍 Infrastructure'
     labels:
       - 'cloud'
       - 'terraform'
       - 'helm'
       - 'deployment'
-  - title: '🔬 Quantum'
-    labels:
-      - 'quantum'
-      - 'qaoa'
-      - 'vqe'
-      - 'circuit'
-  - title: '🤖 AI/Agents'
-    labels:
-      - 'ai'
-      - 'agent'
-      - 'ml'
-  - title: '📖 Documentation'
-    labels:
-      - 'documentation'
-      - 'docs'
-      - 'adr'
-      - 'rfc'
-
 change-template: '- $TITLE @$AUTHOR (#$NUMBER)'
 change-title-escapes: '\<*_&'
 version-resolver:
@@ -78,7 +64,6 @@ version-resolver:
       - 'security'
       - 'dependencies'
   default: patch
-
 template: |
   ## What's Changed
 
@@ -89,7 +74,6 @@ template: |
   $CONTRIBUTORS
 
   **Full Changelog**: https://github.com/$OWNER/$REPOSITORY/compare/$PREVIOUS_TAG...v$RESOLVED_VERSION
-
 autolabeler:
   - label: 'documentation'
     files:
@@ -98,20 +82,10 @@ autolabeler:
   - label: 'ci'
     files:
       - '.github/**/*'
-  - label: 'cloud'
+  - label: 'infrastructure'
     files:
       - 'deployments/helm/**/*'
       - 'deployments/terraform/**/*'
-  - label: 'quantum'
-    files:
-      - 'src/quantum-engine/**/*'
-      - 'docs/quantum/**/*'
-  - label: 'cryptography'
-    files:
-      - 'src/crypto-kernel/**/*'
-  - label: 'ai'
-    files:
-      - 'src/agents/**/*'
   - label: 'dependencies'
     files:
       - 'go.mod'

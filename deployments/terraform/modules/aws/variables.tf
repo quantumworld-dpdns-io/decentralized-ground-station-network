@@ -1,141 +1,102 @@
-variable "project_name" {
-  description = "Project name"
-  type        = string
-  default     = "dgsn"
-}
-
 variable "environment" {
-  description = "Deployment environment"
   type        = string
-  validation {
-    condition     = contains(["dev", "staging", "prod"], var.environment)
-    error_message = "Environment must be dev, staging, or prod."
-  }
+  description = "Environment name (dev, staging, prod)"
+  default     = "dev"
 }
 
-variable "aws_region" {
+variable "cluster_name" {
+  type        = string
+  description = "EKS cluster name"
+  default     = "dgsn-cluster"
+}
+
+variable "region" {
+  type        = string
   description = "AWS region"
-  type        = string
-  default     = "us-east-1"
+  default     = "us-west-2"
 }
 
-variable "availability_zones" {
-  description = "Availability zones"
+variable "instance_types" {
   type        = list(string)
-  default     = ["us-east-1a", "us-east-1b", "us-east-1c"]
+  description = "EC2 instance types for on-demand worker nodes"
+  default     = ["t3.medium"]
+}
+
+variable "spot_instance_types" {
+  type        = list(string)
+  description = "EC2 instance types for spot worker nodes"
+  default     = ["t3.large", "t3a.large", "m5.large"]
+}
+
+variable "min_size" {
+  type        = number
+  description = "Minimum number of worker nodes in node group"
+  default     = 3
+}
+
+variable "max_size" {
+  type        = number
+  description = "Maximum number of worker nodes in node group"
+  default     = 10
 }
 
 variable "vpc_cidr" {
-  description = "VPC CIDR block"
   type        = string
+  description = "VPC CIDR block"
   default     = "10.0.0.0/16"
 }
 
-variable "private_subnet_cidrs" {
-  description = "Private subnet CIDR blocks"
+variable "private_subnets" {
   type        = list(string)
+  description = "Private subnet CIDR blocks (one per AZ)"
   default     = ["10.0.1.0/24", "10.0.2.0/24", "10.0.3.0/24"]
 }
 
-variable "public_subnet_cidrs" {
-  description = "Public subnet CIDR blocks"
+variable "public_subnets" {
   type        = list(string)
+  description = "Public subnet CIDR blocks (one per AZ)"
   default     = ["10.0.101.0/24", "10.0.102.0/24", "10.0.103.0/24"]
 }
 
-variable "allowed_cidrs" {
-  description = "Allowed CIDR blocks for API access"
-  type        = list(string)
-  default     = ["0.0.0.0/0"]
+variable "pqc_enabled" {
+  type        = bool
+  description = "Enable Post-Quantum Cryptography (NIST SP 800-186 compliant)"
+  default     = false
 }
 
-variable "eks_version" {
-  description = "EKS cluster version"
-  type        = string
-  default     = "1.31"
+variable "multi_az" {
+  type        = bool
+  description = "Enable multi-AZ high availability"
+  default     = false
 }
 
-variable "node_instance_types" {
-  description = "EC2 instance types for node group"
-  type        = list(string)
-  default     = ["m6i.large", "m6a.large"]
+variable "use_spot_instances" {
+  type        = bool
+  description = "Enable spot instances for cost optimization"
+  default     = false
 }
 
-variable "node_desired_size" {
-  description = "Desired node count"
+variable "on_demand_base_capacity" {
   type        = number
-  default     = 3
+  description = "Number of on-demand base instances when using spot"
+  default     = 0
 }
 
-variable "node_min_size" {
-  description = "Minimum node count"
-  type        = number
-  default     = 3
+variable "enable_vpc_flow_logs" {
+  type        = bool
+  description = "Enable VPC flow logs for network monitoring"
+  default     = false
 }
 
-variable "node_max_size" {
-  description = "Maximum node count"
-  type        = number
-  default     = 20
+variable "enable_cloudwatch" {
+  type        = bool
+  description = "Enable CloudWatch integration"
+  default     = false
 }
 
-variable "postgres_version" {
-  description = "PostgreSQL engine version"
+variable "rds_password" {
   type        = string
-  default     = "16.3"
-}
-
-variable "rds_instance_class" {
-  description = "RDS instance class"
-  type        = string
-  default     = "db.r6g.large"
-}
-
-variable "rds_allocated_storage" {
-  description = "RDS allocated storage in GB"
-  type        = number
-  default     = 100
-}
-
-variable "db_username" {
-  description = "Database master username"
-  type        = string
-  default     = "dgsn_admin"
-}
-
-variable "db_password" {
-  description = "Database master password (auto-generated if empty)"
-  type        = string
+  description = "RDS PostgreSQL master password"
   sensitive   = true
   default     = ""
-}
-
-variable "db_backup_retention" {
-  description = "Database backup retention in days"
-  type        = number
-  default     = 30
-}
-
-variable "redis_version" {
-  description = "Redis engine version"
-  type        = string
-  default     = "7.1"
-}
-
-variable "redis_node_type" {
-  description = "Redis node type"
-  type        = string
-  default     = "cache.r6g.large"
-}
-
-variable "redis_num_nodes" {
-  description = "Number of Redis cache nodes"
-  type        = number
-  default     = 3
-}
-
-variable "ecr_repositories" {
-  description = "ECR repository names"
-  type        = list(string)
-  default     = ["backend", "frontend", "crypto", "quantum", "signal"]
 }

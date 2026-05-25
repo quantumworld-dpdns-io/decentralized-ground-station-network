@@ -2,154 +2,240 @@
 
 ## Overview
 
-DGSN implements a defense-in-depth security architecture with post-quantum cryptography, eBPF-based runtime security, zero-trust networking, and comprehensive audit logging.
+DGSN implements a defense-in-depth security architecture with post-quantum cryptography (PQC), eBPF-based runtime security with Cilium Tetragon, zero-trust networking via Cilium NetworkPolicies, and comprehensive audit logging. This document covers the full security posture including threat model, encryption, authentication, authorization, secrets management, and compliance.
 
-## Security Layers
+## Threat Model (STRIDE Per Component)
 
-```
-Layer 1: Application Security
-  - Post-quantum crypto (ML-KEM, ML-DSA, SLH-DSA)
-  - Zero-knowledge proofs for receipt verification
-  - Input validation and rate limiting
+| Component | Spoofing | Tampering | Repudiation | Info Disclosure | DoS | Elevation of Privilege |
+|-----------|----------|-----------|-------------|-----------------|-----|----------------------|
+| API Gateway | OIDC + mTLS | Request signing | Audit logging | TLS 1.3 | Rate limiting | RBAC + OPA |
+| Go Backend | mTLS | Receipt hashing | Audit trail | Field-level encrypt | Connection pool | RBAC |
+| Rust Crypto Kernel | PQC identity | ML-DSA signing | Non-repudiation | ML-KEM encrypt | Resource limits | Seccomp |
+| Python Quantum | mTLS | Input validation | Job audit | Circuit encryption | Queue limits | RBAC |
+| Julia Signal | mTLS | Signal hashing | Sample audit | ADC encryption | Buffer limits | Seccomp |
+| Frontend | OIDC login | CSRF tokens | Session audit | HTTPS only | Rate limiting | RBAC |
+| Redis | AUTH + TLS | No tampering | Logging | Encrypted at rest | Memory limits | ACL |
+| PostgreSQL | TLS + SCRAM | FK constraints | WAL audit | TDE + AEAD | Connection pool | Row-level security |
 
-Layer 2: Service Security
-  - mTLS between all gRPC services
-  - OAuth 2.0 / OIDC authentication
-  - Role-based access control (RBAC)
+## Encryption
 
-Layer 3: Runtime Security
-  - Cilium Tetragon eBPF monitoring
-  - Seccomp profiles for containers
-  - AppArmor/SELinux policies
+### At Rest
+- **PostgreSQL**: Transparent Data Encryption (TDE) + column-level AEAD for PII
+- **Redis**: Encrypted at rest via Redis Enterprise or AESCrypt
+- **S3/MinIO**: Server-side encryption with ML-KEM-1024 wrapped keys
+- **Key Material**: Stored in Vault with HSM backing, encrypted with ML-KEM-1024
+- **Receipt Store**: Individual receipt encryption using ML-KEM-768 per-receipt keys
 
-Layer 4: Network Security
-  - Cilium NetworkPolicy (zero-trust)
-  - Encrypted inter-service communication
-  - API gateway with WAF
+### In Transit
+- **mTLS**: All gRPC services use mutual TLS with X.509 certs
+- **TLS 1.3**: Minimum TLS version across all HTTP/gRPC endpoints
+- **PQC Hybrid**: X25519 + ML-KEM-768 key exchange, Ed25519 + ML-DSA-65 signatures
+- **Cipher Suites**:
+  - TLS_AES_256_GCM_SHA384
+  - TLS_CHACHA20_POLY1305_SHA256
+  - TLS_ECDHE_KYBER_MLKEM768_WITH_AES_256_GCM_SHA384 (PQC hybrid)
 
-Layer 5: Infrastructure Security
-  - Kubernetes RBAC + audit logging
-  - Secrets management (External Secrets Operator)
-  - Image scanning and signing
-```
+## Authentication
 
-## Post-Quantum Cryptography
+### OIDC (Primary)
+- Provider: Dex, Keycloak, or cloud IdP (Okta, Azure AD)
+- Flows: Authorization Code + PKCE for web; Client Credentials for services
+- Token types: JWT access tokens (15min), refresh tokens (24h), ID tokens
+- MFA enforced for all human users via OIDC provider
+- Service accounts use SPIFFE/SPIRE identities for workload auth
 
-### Key Management
+### API Keys (Secondary)
+- For machine-to-machine communication when OIDC is impractical
+- Scoped to specific service + action
+- Rotated every 90 days via Vault
+- Stored as bcrypt hashes in PostgreSQL
 
-| Key Type | Algorithm | Usage | Rotation |
-|----------|-----------|-------|----------|
-| Identity | SLH-DSA-192s | Long-term station identity | 12 months |
-| Session | ML-KEM-768 | Ephemeral session keys | Per-session |
-| Receipt | ML-DSA-65 | Receipt signing | 6 months |
-| Backup | ML-KEM-1024 | Data encryption at rest | 24 months |
+### MFA
+- Required for: admin access, key rotation, configuration changes
+- Supported: TOTP (RFC 6238), WebAuthn/FIDO2, hardware security keys
+- Enforced at OIDC provider level
 
-### Key Hierarchy
+## Authorization (RBAC)
 
-```
-Root CA (SLH-DSA-256f)
-  ├── Station Identity Key (SLH-DSA-192s)
-  │     ├── Session Key (ML-KEM-768)
-  │     └── Receipt Signing Key (ML-DSA-65)
-  └── Operator Key (ML-DSA-87)
-        └── API Token Key (ML-DSA-44)
-```
+| Role | Permissions | Scope |
+|------|------------|-------|
+| Viewer | Read dashboards, view receipts | Read-only |
+| Operator | Create/view receipts, manage stations | Station operations |
+| Engineer | Deploy circuits, manage quantum jobs | Quantum + signal |
+| CryptoAdmin | Rotate PQC keys, manage certificates | Crypto kernel |
+| Admin | Full access, RBAC management, audit | Everything |
+| SecurityAuditor | Read audit logs, compliance reports | Read-only audit |
 
-## Runtime Security (eBPF)
+RBAC enforced via:
+- Kubernetes RBAC for infrastructure
+- Application-level RBAC in Go backend (Casbin or OPA)
+- gRPC interceptor for service-to-service authorization
+- Attribute-based access control (ABAC) for receipts (station ownership)
 
-### Tetragon Tracing Policies
+## PQC Integration
 
-See `configs/cilium/tetragon-tracing-policy.yaml`:
-- Signal processing process monitoring
-- USB/SDR device access tracking
-- Network connection auditing
-- File system access control
+DGSN integrates three NIST-standardized post-quantum algorithms:
 
-### Tetragon Security Policies
+- **ML-KEM (FIPS 203)**: Key encapsulation for session establishment
+- **ML-DSA (FIPS 204)**: Digital signatures for receipt verification
+- **SLH-DSA (FIPS 205)**: Stateless hash-based signatures for long-term identity
 
-See `configs/cilium/tetragon-security-policy.yaml`:
-- Unauthorized process execution prevention
-- Sensitive file access monitoring
-- Privilege escalation detection
-- Container breakout prevention
+See `docs/architecture/pqc-deployment-guide.md` for detailed deployment procedures.
 
-## Network Security
+## Zero-Trust Networking
 
-### Zero-Trust Network Policies
+DGSN implements a zero-trust architecture using Cilium NetworkPolicies:
 
-See `configs/cilium/network-policy.yaml`:
-- Default deny ingress/egress
-- Service-to-service allowlists
-- DNS-external access denied by default
-- Allowed ports strictly defined
+1. **Default Deny**: All ingress/egress denied by default
+2. **Micro-segmentation**: Each service has its own policy
+3. **Identity-based**: Policies use Kubernetes labels, not IPs
+4. **L7 aware**: HTTP/gRPC methods enforced via Cilium L7 policies
+5. **Continuous verification**: eBPF monitors all connections
 
-### Service Mesh (Future)
-
-- Istio or Cilium Service Mesh for mTLS
-- Layer 7 policies for HTTP/gRPC
-- Circuit breaking and retry budgets
+See `docs/architecture/zero-trust.md` for detailed architecture.
 
 ## Secrets Management
 
-External Secrets Operator integrates with:
-- AWS Secrets Manager (production)
-- GCP Secret Manager (disaster recovery)
-- Azure Key Vault (optional)
+### Vault Integration
+- HashiCorp Vault for all secrets storage
+- HSM backing for PQC private keys
+- Dynamic secrets for databases (short-lived credentials)
+- Automatic rotation every 90 days
 
 ### Secret Types
+| Secret | Storage | Rotation | Access |
+|--------|---------|----------|--------|
+| Database credentials | Vault dynamic secrets | 24h | Backend only |
+| Redis password | Vault static | 90 days | Services |
+| PQC private keys | Vault + HSM | Policy-based | CryptoAdmin |
+| TLS certificates | cert-manager | 90 days | All services |
+| API keys | Vault | 90 days | Per service |
+| OIDC client secrets | Vault | Manual | Auth service |
 
-| Secret | Storage | Rotation |
-|--------|---------|----------|
-| DB password | AWS Secrets Manager | 90 days |
-| Redis password | AWS Secrets Manager | 90 days |
-| API keys | AWS Secrets Manager | Manual |
-| TLS certs | cert-manager + Let's Encrypt | 90 days |
-| PQC private keys | Vault + HSM | Policy-based |
+### External Secrets Operator
+- Syncs Vault secrets to Kubernetes Secrets
+- Mutating webhook injects secrets into pods
+- Audit-logged via Kubernetes audit policy
 
 ## Audit Logging
 
-### Kubernetes Audit Policy
+### Kubernetes Audit
+- All pod exec, secret access, RBAC changes logged
+- Metadata level: RequestResponse for sensitive operations
+- Logs shipped to Loki for querying
 
-See `configs/cilium/audit-policy.yaml`:
-- All pod exec and secret access logged at RequestResponse level
-- All changes to RBAC and NetworkPolicy logged
-- Failed authentication attempts detailed
-- Health checks excluded from audit log
+### Application Audit
+- Every receipt creation/verification logged
+- All auth attempts (success/failure) logged
+- PQC key operations logged
+- Configuration changes logged
+- Audit events include: timestamp, actor, action, resource, result
 
-### OpenTelemetry Tracing
-
-All inter-service calls traced with OpenTelemetry:
-- Span attributes include security context
-- Trace sampling prioritizes error spans
-- Exemplars link metrics to traces
+### Retention
+- Application audit logs: 90 days hot (Loki), 1 year cold (S3)
+- Kubernetes audit logs: 30 days hot, 1 year cold
+- Receipt chain: Permanent (immutable ledger)
 
 ## Incident Response
 
-See `docs/runbooks/incident-response.md` for detailed procedures.
+See `docs/runbooks/incident-response.md` for detailed procedures covering:
+- Security Breach
+- Service Outage
+- Data Loss
+- Quantum Circuit Failure
+- PQC Key Compromise
+- DDoS Attack
 
 ## Compliance
 
-See the following documents:
-- `docs/architecture/compliance-soc2.md` - SOC 2 compliance mapping
-- `docs/architecture/threat-model.md` - STRIDE threat model
-- `docs/architecture/pqc-deployment-guide.md` - PQC deployment guide
+### SOC 2
+- Security: CC1-CC9 controls mapped
+- Availability: Uptime monitoring, redundancy
+- Processing Integrity: Receipt verification chain
+- Confidentiality: Encryption at rest/in transit
+- Privacy: PII minimization, retention limits
+
+See `docs/architecture/compliance-soc2.md` for full mapping.
+
+### ISO 27001
+- A.5 Information security policies
+- A.6 Organization of information security
+- A.8 Asset management
+- A.9 Access control
+- A.10 Cryptography
+- A.12 Operations security
+- A.16 Incident management
+- A.18 Compliance
+
+### NIST CSF
+- Identify: Asset management, risk assessment
+- Protect: Access control, data security, maintenance
+- Detect: Continuous monitoring, anomaly detection
+- Respond: Incident response, analysis
+- Recover: Recovery planning, improvements
 
 ## Security Monitoring
 
 ### Prometheus Alerts
-- `configs/prometheus/alert-rules.yml` - Real-time security alerts
-- Dashboard: `configs/grafana/dashboards/security-events.json`
+- Real-time security alerts in `configs/prometheus/alert-rules.yml`
+- Covers: high error rates, auth failures, certificate expiry, disk space
 
-### Key Metrics
-- `dgsn_security_alerts_total{severity}` - Security alerts by severity
-- `dgsn_tetragon_signal_violations_total` - eBPF policy violations
-- `dgsn_auth_failures_total` - Authentication failures
-- `dgsn_zkp_verification_failures_total` - ZKP verification failures
-- `dgsn_unauthorized_access_total` - Unauthorized access attempts
+### Grafana Dashboards
+- `configs/grafana/dashboards/security-events.json` - Security event monitoring
+- PQC algorithm usage, audit log counts, failed auth attempts
+
+### eBPF Monitoring (Tetragon)
+- Process execution monitoring
+- File system access control
+- Network connection auditing
+- Capability usage detection
+
+## Network Security
+
+### Firewall Rules
+| Direction | Source | Destination | Port | Protocol | Purpose |
+|-----------|--------|-------------|------|----------|---------|
+| Ingress | Internet | API Gateway | 443 | TCP | External API |
+| Ingress | Frontend | Backend | 8080 | TCP | API calls |
+| Ingress | Backend | Crypto | 50051 | TCP | gRPC crypto |
+| Ingress | Backend | Quantum | 50052 | TCP | gRPC quantum |
+| Ingress | Backend | Signal | 50053 | TCP | gRPC signal |
+| Ingress | OTEL | Prometheus | 9090 | TCP | Metrics scrape |
+| Egress | All | DNS | 53 | UDP | DNS resolution |
+| Egress | All | NTP | 123 | UDP | Time sync |
+
+### WAF Rules (Apache/CloudFront)
+- SQL injection detection blocked at gateway
+- XSS payload filtering
+- Rate limiting: 1000 req/min per IP
+- Request size limit: 10MB
+- Blocked countries configurable
 
 ## Disaster Recovery
 
-1. **Key Material**: HSM-backed backup in multiple regions
-2. **Secrets**: Replicated across secret stores
-3. **Config**: GitOps with ArgoCD, all configs in version control
-4. **Data**: PostgreSQL WAL streaming + S3 backups
+### RTO/RPO
+- Receipt processing: RTO 5min, RPO 1min
+- API service: RTO 2min, RPO 0 (stateless)
+- Quantum jobs: RTO 30min, RPO (restart from checkpoint)
+- Crypto keys: RTO 15min, RPO 0 (HSM replicated)
+
+### Backup Strategy
+- PostgreSQL: WAL streaming + daily snapshots (30d retention)
+- Redis: AOF + RDB snapshots (7d retention)
+- Receipts: Dual-write to S3 + PostgreSQL (permanent)
+- Config: GitOps with ArgoCD (infinite retention)
+- Keys: HSM backup in secondary region
+
+## Security Controls Summary
+
+| Control | Implementation | Verification |
+|---------|---------------|-------------|
+| Access control | OIDC + RBAC + ABAC | Quarterly access review |
+| Encryption at rest | TDE + AEAD | Automated key rotation test |
+| Encryption in transit | TLS 1.3 + mTLS | Continuous cipher suite monitoring |
+| Input validation | Gateway + service-level | DAST scan monthly |
+| Audit logging | Structured + immutable | Weekly log review |
+| Vulnerability mgmt | Trivy + Grype scans | CI pipeline blocking |
+| Incident response | Documented runbooks | Tabletop exercises quarterly |
+| Business continuity | Multi-AZ + DR region | Annual DR test |
+| Supplier security | SBOM + sig verification | Pre-deployment scan |

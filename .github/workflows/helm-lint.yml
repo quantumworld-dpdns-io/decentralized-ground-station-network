@@ -1,11 +1,9 @@
 name: Helm Lint
 on:
   push:
-    branches: [main, develop]
-    paths: ['deployments/helm/**']
+    branches: [main]
   pull_request:
     branches: [main]
-    paths: ['deployments/helm/**']
   workflow_dispatch:
 
 concurrency:
@@ -30,21 +28,19 @@ jobs:
         uses: azure/setup-helm@v4
         with:
           version: latest
-      - name: Add repos
+      - name: Add Helm repos
         run: |
           helm repo add bitnami https://charts.bitnami.com/bitnami
           helm repo update
-      - name: Lint chart
+      - name: Helm lint chart
+        run: helm lint deployments/helm/${{ matrix.chart }} --strict
+      - name: Helm template validation
+        run: helm template test deployments/helm/${{ matrix.chart }} --validate
+      - name: Install chart-testing
         run: |
-          helm lint deployments/helm/${{ matrix.chart }} --strict
-      - name: Template chart
+          wget -q https://github.com/helm/chart-testing/releases/latest/download/chart-testing_Linux_x86_64.tar.gz
+          tar xzf chart-testing_Linux_x86_64.tar.gz
+          sudo mv ct /usr/local/bin/
+      - name: Chart-testing lint
         run: |
-          helm template test deployments/helm/${{ matrix.chart }}
-      - name: Check YAML validity
-        run: |
-          for f in deployments/helm/${{ matrix.chart }}/templates/*.yaml; do
-            python3 -c "import yaml; yaml.safe_load(open('$f'))" && echo "Valid: $f"
-          done
-      - name: Dry run install
-        run: |
-          helm install --dry-run --debug test deployments/helm/${{ matrix.chart }}
+          ct lint --charts deployments/helm/${{ matrix.chart }} --validate-maintainers=false

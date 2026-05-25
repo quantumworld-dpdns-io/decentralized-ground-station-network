@@ -1,0 +1,180 @@
+version: '3.8'
+
+networks:
+  dgsn-monitoring:
+    driver: bridge
+    name: dgsn-docker_dgsn-network
+    external: true
+
+volumes:
+  prometheus-data:
+    external: true
+  grafana-data:
+    external: true
+  loki-data:
+  tempo-data:
+
+services:
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: dgsn-prometheus-mon
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--storage.tsdb.retention.time=15d'
+      - '--web.enable-lifecycle'
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus-data:/prometheus
+    ports:
+      - "9090:9090"
+    networks:
+      - dgsn-monitoring
+    deploy:
+      resources:
+        limits:
+          cpus: '4.0'
+          memory: 8G
+        reservations:
+          cpus: '1.0'
+          memory: 2G
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: dgsn-grafana-mon
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
+      GF_USERS_ALLOW_SIGN_UP: 'false'
+      GF_INSTALL_PLUGINS: 'grafana-piechart-panel,grafana-worldmap-panel'
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./grafana/provisioning/datasources:/etc/grafana/provisioning/datasources
+      - ./grafana/provisioning/dashboards:/etc/grafana/provisioning/dashboards
+      - ./grafana/dashboards:/var/lib/grafana/dashboards
+    ports:
+      - "3001:3000"
+    networks:
+      - dgsn-monitoring
+    depends_on:
+      - prometheus
+      - loki
+      - tempo
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 4G
+    restart: unless-stopped
+
+  loki:
+    image: grafana/loki:latest
+    container_name: dgsn-loki
+    command: -config.file=/etc/loki/local-config.yaml
+    volumes:
+      - ./loki/loki-config.yaml:/etc/loki/local-config.yaml
+      - loki-data:/loki
+    ports:
+      - "3100:3100"
+    networks:
+      - dgsn-monitoring
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 4G
+    restart: unless-stopped
+
+  tempo:
+    image: grafana/tempo:latest
+    container_name: dgsn-tempo
+    command: [ "-config.file=/etc/tempo.yaml" ]
+    volumes:
+      - ./tempo/tempo-config.yaml:/etc/tempo.yaml
+      - tempo-data:/tmp/tempo
+    ports:
+      - "14268:14268"
+      - "3200:3200"
+      - "9411:9411"
+      - "4317:4317"
+    networks:
+      - dgsn-monitoring
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 4G
+    restart: unless-stopped
+
+  jaeger:
+    image: jaegertracing/all-in-one:latest
+    container_name: dgsn-jaeger
+    environment:
+      - COLLECTOR_OTLP_ENABLED=true
+      - SPAN_STORAGE_TYPE=memory
+    ports:
+      - "6831:6831/udp"
+      - "6832:6832/udp"
+      - "5778:5778"
+      - "16686:16686"
+      - "4317:4317"
+      - "4318:4318"
+      - "14250:14250"
+      - "14268:14268"
+      - "14269:14269"
+      - "9411:9411"
+    networks:
+      - dgsn-monitoring
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 4G
+    restart: unless-stopped
+
+  node-exporter:
+    image: prom/node-exporter:latest
+    container_name: dgsn-node-exporter
+    command:
+      - '--path.procfs=/host/proc'
+      - '--path.rootfs=/rootfs'
+      - '--path.sysfs=/host/sys'
+      - '--collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)'
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/rootfs:ro
+    ports:
+      - "9100:9100"
+    networks:
+      - dgsn-monitoring
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+    restart: unless-stopped
+
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:latest
+    container_name: dgsn-cadvisor
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:rw
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+      - /dev/disk/:/dev/disk:ro
+    devices:
+      - /dev/kmsg
+    ports:
+      - "8080:8080"
+    networks:
+      - dgsn-monitoring
+    privileged: true
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512M
+    restart: unless-stopped

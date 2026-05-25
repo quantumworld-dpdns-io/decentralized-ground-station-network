@@ -1,72 +1,111 @@
-{{- if not .Values.prometheus.enabled }}
-apiVersion: apps/v1
-kind: StatefulSet
+{{- if .Values.monitoring.enabled }}
+apiVersion: monitoring.coreos.com/v1
+kind: Prometheus
 metadata:
-  name: {{ include "dgsn-infra.fullname" . }}-prometheus
+  name: {{ include "dgsn-infra.fullname" . }}
   labels:
     {{- include "dgsn-infra.labels" . | nindent 4 }}
-    app.kubernetes.io/component: prometheus
 spec:
-  serviceName: {{ include "dgsn-infra.fullname" . }}-prometheus
-  replicas: 1
-  selector:
-    matchLabels:
-      {{- include "dgsn-infra.labels" . | nindent 6 }}
-      app.kubernetes.io/component: prometheus
-  template:
-    metadata:
-      labels:
-        {{- include "dgsn-infra.labels" . | nindent 8 }}
-        app.kubernetes.io/component: prometheus
-    spec:
-      containers:
-        - name: prometheus
-          image: prom/prometheus:v2.55.0
-          args:
-            - --config.file=/etc/prometheus/prometheus.yml
-            - --storage.tsdb.path=/prometheus
-            - --storage.tsdb.retention.time=15d
-            - --web.enable-lifecycle
-          ports:
-            - containerPort: 9090
-              name: http
-          volumeMounts:
-            - name: config
-              mountPath: /etc/prometheus
-            - name: data
-              mountPath: /prometheus
-          resources:
-            requests:
-              cpu: 500m
-              memory: 2Gi
-            limits:
-              cpu: 2
-              memory: 8Gi
-      volumes:
-        - name: config
-          configMap:
-            name: {{ include "dgsn-infra.fullname" . }}-prometheus
-  volumeClaimTemplates:
-    - metadata:
-        name: data
+  replicas: 2
+  shards: 1
+  retention: "15d"
+  scrapeInterval: "30s"
+  evaluationInterval: "30s"
+  serviceAccountName: {{ include "dgsn-infra.fullname" . }}-prometheus
+  serviceMonitorNamespaceSelector: {}
+  serviceMonitorSelector: {}
+  podMonitorNamespaceSelector: {}
+  podMonitorSelector: {}
+  ruleNamespaceSelector: {}
+  ruleSelector: {}
+  storage:
+    volumeClaimTemplate:
       spec:
-        accessModes: ["ReadWriteOnce"]
+        storageClassName: "gp3"
         resources:
           requests:
             storage: 50Gi
+  additionalScrapeConfigs:
+    name: {{ include "dgsn-infra.fullname" . }}-additional-scrape-configs
+    key: additional-scrape-configs.yaml
+  alerting:
+    alertmanagers:
+      - namespace: {{ .Release.Namespace }}
+        name: {{ include "dgsn-infra.fullname" . }}-alertmanager
+        port: web
+  resources:
+    requests:
+      cpu: 500m
+      memory: 1Gi
+    limits:
+      cpu: 2
+      memory: 8Gi
 ---
-apiVersion: v1
-kind: Service
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
 metadata:
-  name: {{ include "dgsn-infra.fullname" . }}-prometheus
+  name: {{ include "dgsn-infra.fullname" . }}-backend
   labels:
     {{- include "dgsn-infra.labels" . | nindent 4 }}
-    app.kubernetes.io/component: prometheus
 spec:
-  ports:
-    - port: 9090
-      name: http
   selector:
+    matchLabels:
+      app.kubernetes.io/name: dgsn-backend
+  endpoints:
+    - port: http
+      path: /metrics
+      interval: 30s
+  namespaceSelector:
+    any: true
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ include "dgsn-infra.fullname" . }}-crypto
+  labels:
     {{- include "dgsn-infra.labels" . | nindent 4 }}
-    app.kubernetes.io/component: prometheus
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: dgsn-crypto
+  endpoints:
+    - port: metrics
+      path: /metrics
+      interval: 30s
+  namespaceSelector:
+    any: true
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ include "dgsn-infra.fullname" . }}-quantum
+  labels:
+    {{- include "dgsn-infra.labels" . | nindent 4 }}
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: dgsn-quantum
+  endpoints:
+    - port: metrics
+      path: /metrics
+      interval: 30s
+  namespaceSelector:
+    any: true
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ include "dgsn-infra.fullname" . }}-signal
+  labels:
+    {{- include "dgsn-infra.labels" . | nindent 4 }}
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: dgsn-signal
+  endpoints:
+    - port: metrics
+      path: /metrics
+      interval: 30s
+  namespaceSelector:
+    any: true
 {{- end }}

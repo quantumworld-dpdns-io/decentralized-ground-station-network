@@ -1,62 +1,143 @@
 replicaCount: 2
 
 image:
-  repository: ghcr.io/decentralized-ground-station-network/signal
-  tag: latest
-  pullPolicy: Always
+  repository: ghcr.io/dgsn/signal
+  pullPolicy: IfNotPresent
+  tag: "latest"
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
 
 serviceAccount:
   create: true
-  name: dgsn-signal
+  annotations: {}
+  name: ""
+
+podAnnotations:
+  prometheus.io/scrape: "true"
+  prometheus.io/port: "9090"
 
 podSecurityContext:
-  runAsNonRoot: true
-  runAsUser: 1001
-  fsGroup: 1001
+  runAsNonRoot: false
+  privileged: true
 
 securityContext:
-  allowPrivilegeEscalation: false
+  privileged: true
   capabilities:
-    drop: [ALL]
-  readOnlyRootFilesystem: true
+    add:
+      - SYS_RAWIO
+      - IPC_LOCK
 
 service:
   type: ClusterIP
-  port: 8110
-  metricsPort: 9091
+  port: 50053
 
 resources:
-  limits:
+  requests:
     cpu: 4
     memory: 8Gi
-  requests:
-    cpu: 1
-    memory: 2Gi
-
-config:
-  environment: production
-  logLevel: info
-  sampleRate: 2400000
-  fftSize: 4096
-  modulationTypes:
-    - FM
-    - AM
-    - BPSK
-    - QPSK
-    - QAM16
-    - QAM64
-    - QAM256
-    - OFDM
-  signalDetection:
-    threshold: -120
-    minBandwidth: 1000
-    maxBandwidth: 50000000
-  telemetry:
-    enabled: true
-    otlpEndpoint: dgsn-otel-collector:4317
+  limits:
+    cpu: 16
+    memory: 32Gi
 
 autoscaling:
   enabled: true
   minReplicas: 2
   maxReplicas: 10
   targetCPUUtilizationPercentage: 75
+
+livenessProbe:
+  grpc:
+    port: 50053
+  initialDelaySeconds: 45
+  periodSeconds: 15
+  timeoutSeconds: 10
+  failureThreshold: 5
+
+readinessProbe:
+  grpc:
+    port: 50053
+  initialDelaySeconds: 20
+  periodSeconds: 10
+  timeoutSeconds: 5
+  failureThreshold: 3
+
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 1
+
+nodeSelector:
+  kubernetes.io/os: linux
+
+tolerations:
+  - key: "sdr-hardware"
+    operator: "Equal"
+    value: "present"
+    effect: "NoSchedule"
+
+affinity:
+  podAntiAffinity:
+    preferredDuringSchedulingIgnoredDuringExecution:
+      - weight: 100
+        podAffinityTerm:
+          labelSelector:
+            matchExpressions:
+              - key: app.kubernetes.io/name
+                operator: In
+                values:
+                  - dgsn-signal
+          topologyKey: kubernetes.io/hostname
+
+env:
+  LOG_LEVEL: info
+  ENVIRONMENT: production
+  GRPC_PORT: "50053"
+  METRICS_PORT: "9090"
+
+sdr:
+  enabled: true
+  devices:
+    - type: rtlsdr
+      vendorId: "0bda"
+      productId: "2838"
+    - type: hackrf
+      vendorId: "1d50"
+      productId: "6089"
+    - type: bladerf
+      vendorId: "2cf0"
+      productId: "5246"
+  hostDevices:
+    - /dev/bus/usb
+    - /dev/rtl_sdr
+    - /dev/hackrf
+    - /dev/bladerf
+  sampleRate: 2048000
+  centerFreq: 433000000
+  gain: 40
+
+signal:
+  fftSize: 4096
+  window: "hamming"
+  detectionThreshold: 0.01
+  modulationTypes:
+    - AM
+    - FM
+    - FSK
+    - PSK
+    - QAM
+  maxChannels: 100
+
+storage:
+  minio:
+    endpoint: "minio:9000"
+    bucket: "dgsn-signals"
+    useSSL: false
+  retention:
+    rawSignals: "7d"
+    processedSignals: "30d"
+
+metrics:
+  enabled: true
+  port: 9090
+  path: /metrics

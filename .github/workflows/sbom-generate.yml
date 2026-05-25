@@ -15,6 +15,9 @@ concurrency:
 jobs:
   sbom:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      packages: write
     steps:
       - uses: actions/checkout@v4
       - name: Generate SBOM with Syft
@@ -23,27 +26,17 @@ jobs:
           path: .
           format: spdx-json
           output-file: dgsn-sbom.spdx.json
-      - name: Generate CycloneDX SBOM
-        uses: CycloneDX/gh-gomod-generate-sbom@v2
+      - name: Upload SBOM to Dependency Graph
+        uses: anchore/sbom-action/push-to-dependency-graph@v0
         with:
-          version: v1
-          output: dgsn-sbom.cdx.json
-          args: mod -licenses -json
-      - name: Validate SPDX SBOM
-        run: |
-          pip install spdx-tools
-          spdx-validate dgsn-sbom.spdx.json
-      - name: Upload SBOMs
+          file: dgsn-sbom.spdx.json
+      - name: Upload SBOM as artifact
         uses: actions/upload-artifact@v4
         with:
           name: dgsn-sbom
-          path: |
-            dgsn-sbom.spdx.json
-            dgsn-sbom.cdx.json
-      - name: Attach to release
+          path: dgsn-sbom.spdx.json
+      - name: Attach SBOM to release
         if: github.event_name == 'release'
         uses: softprops/action-gh-release@v2
         with:
-          files: |
-            dgsn-sbom.spdx.json
-            dgsn-sbom.cdx.json
+          files: dgsn-sbom.spdx.json

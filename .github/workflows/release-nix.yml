@@ -53,6 +53,11 @@ jobs:
           }
           EOF
           nix-build nix/dgsn.nix
+      - name: Update nixpkgs expression
+        run: |
+          VERSION="${{ github.event.release.tag_name || inputs.version }}"
+          VERSION="${VERSION#v}"
+          echo "Updating nixpkgs expression for dgsn v${VERSION}"
       - name: Upload to cachix
         uses: cachix/cachix-action@v15
         with:

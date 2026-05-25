@@ -1,9 +1,27 @@
 apiVersion: cilium.io/v1alpha1
 kind: TracingPolicy
 metadata:
-  name: "dgsn-signal-processing-tracing"
+  name: "dgsn-tracing-policy"
 spec:
   kprobes:
+    - call: "sys_read"
+      syscall: true
+      args:
+        - index: 0
+          type: int
+        - index: 1
+          type: bytearray
+        - index: 2
+          type: size_t
+      selectors:
+        - matchPIDs:
+            - operator: In
+              followForks: true
+              values:
+                - 0
+          matchActions:
+            - action: Post
+              argError: true
     - call: "sys_write"
       syscall: true
       args:
@@ -27,21 +45,97 @@ spec:
           matchActions:
             - action: Post
               argError: true
-    - call: "sys_read"
+    - call: "sys_connect"
       syscall: true
       args:
         - index: 0
           type: int
         - index: 1
-          type: bytearray
-        - index: 2
-          type: size_t
+          type: sockaddr
       selectors:
         - matchPIDs:
             - operator: In
               followForks: true
               values:
                 - 0
+          matchActions:
+            - action: Post
+              argError: true
+    - call: "sys_accept"
+      syscall: true
+      args:
+        - index: 0
+          type: int
+        - index: 1
+          type: sockaddr
+        - index: 2
+          type: sockaddr
+      selectors:
+        - matchPIDs:
+            - operator: In
+              followForks: true
+              values:
+                - 0
+          matchActions:
+            - action: Post
+              argError: true
+    - call: "sys_open"
+      syscall: true
+      args:
+        - index: 0
+          type: string
+        - index: 1
+          type: int
+      selectors:
+        - matchPIDs:
+            - operator: In
+              followForks: true
+              values:
+                - 0
+          matchArgs:
+            - index: 0
+              operator: "Prefix"
+              values:
+                - "/etc/dgsn/"
+                - "/var/lib/dgsn/"
+                - "/data/receipts/"
+                - "/dev/sdr"
+                - "/dev/bus/usb"
+                - "/tmp/dgsn-sdr"
+          matchActions:
+            - action: Post
+              argError: true
+    - call: "sys_execve"
+      syscall: true
+      args:
+        - index: 0
+          type: string
+      selectors:
+        - matchPIDs:
+            - operator: In
+              followForks: true
+              values:
+                - 0
+          matchNamespaces:
+            - namespace: "probe"
+              operator: In
+              values:
+                - "host"
+          matchActions:
+            - action: Post
+              argError: true
+    - call: "security_file_open"
+      syscall: false
+      args:
+        - index: 0
+          type: file
+      selectors:
+        - matchArgs:
+            - index: 0
+              operator: "Prefix"
+              values:
+                - "/etc/dgsn/"
+                - "/etc/dgsn/secrets/"
           matchActions:
             - action: Post
               argError: true
@@ -58,6 +152,8 @@ spec:
               followForks: true
               values:
                 - 0
+          matchActions:
+            - action: Post
     - call: "tcp_recvmsg"
       syscall: false
       args:
@@ -65,6 +161,14 @@ spec:
           type: sock
         - index: 1
           type: size_t
+      selectors:
+        - matchPIDs:
+            - operator: In
+              followForks: true
+              values:
+                - 0
+          matchActions:
+            - action: Post
     - call: "sock_sendmsg"
       syscall: false
       args:
@@ -72,6 +176,14 @@ spec:
           type: sock
         - index: 1
           type: size_t
+      selectors:
+        - matchPIDs:
+            - operator: In
+              followForks: true
+              values:
+                - 0
+          matchActions:
+            - action: Post
     - call: "sock_recvmsg"
       syscall: false
       args:
@@ -79,6 +191,50 @@ spec:
           type: sock
         - index: 1
           type: size_t
+      selectors:
+        - matchPIDs:
+            - operator: In
+              followForks: true
+              values:
+                - 0
+          matchActions:
+            - action: Post
+    - call: "sched_process_exec"
+      syscall: false
+      args:
+        - index: 0
+          type: string
+      selectors:
+        - matchNamespaces:
+            - namespace: "probe"
+              operator: In
+              values:
+                - "host"
+          matchArgs:
+            - index: 0
+              operator: "In"
+              values:
+                - "/usr/local/bin/julia"
+                - "/usr/local/bin/python3"
+                - "/usr/local/bin/dgsn-signal-processor"
+                - "/usr/local/bin/dgsn-crypto-cli"
+                - "/usr/local/bin/dgsn-server"
+          matchActions:
+            - action: FollowFD
+            - action: Post
+    - call: "sched_process_exit"
+      syscall: false
+      args:
+        - index: 0
+          type: int
+      selectors:
+        - matchNamespaces:
+            - namespace: "probe"
+              operator: In
+              values:
+                - "host"
+          matchActions:
+            - action: Post
 
   processKprobes:
     - call: "sched_process_exec"
@@ -88,6 +244,9 @@ spec:
           type: string
     - call: "sched_process_exit"
       syscall: false
+      args:
+        - index: 0
+          type: int
 
   processExec:
     matchArgs:
@@ -99,6 +258,7 @@ spec:
           - "/usr/local/bin/dgsn-signal-processor"
           - "/usr/local/bin/dgsn-crypto-cli"
           - "/usr/local/bin/dgsn-server"
+          - "/usr/local/bin/dgsn-cli"
     matchActions:
       - action: FollowFD
       - action: Post
@@ -111,6 +271,7 @@ spec:
           - "/usr/local/bin/julia"
           - "/usr/local/bin/python3"
           - "/usr/local/bin/dgsn-signal-processor"
+          - "/usr/local/bin/dgsn-crypto-cli"
 
   fileAccess:
     - matchPaths:
@@ -119,9 +280,12 @@ spec:
         - prefix: "/tmp/dgsn-sdr"
         - prefix: "/data/receipts"
         - prefix: "/var/log/dgsn"
+        - prefix: "/etc/dgsn/secrets"
       matchOperations:
         - "read"
         - "write"
+      matchActions:
+        - action: Post
 
   network:
     egress:
@@ -131,11 +295,17 @@ spec:
               - "redis-primary:6379"
               - "backend:9090"
               - "otel-collector:4317"
-              - "s3:9000"
+              - "crypto-kernel:50051"
+              - "quantum-engine:50052"
+              - "signal-processing:50053"
+              - "minio:9000"
       - matchProtocols:
           - "tcp"
       - matchPorts:
           - "6379"
           - "9090"
           - "4317"
+          - "50051"
+          - "50052"
+          - "50053"
           - "9000"

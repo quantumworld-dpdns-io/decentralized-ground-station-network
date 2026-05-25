@@ -1,31 +1,6 @@
 apiVersion: v2
 name: dgsn-backend
-description: DGSN Backend API server with gRPC and HTTP endpoints
+description: DGSN Go backend service
 type: application
 version: 0.1.0
-appVersion: "0.1.0"
-icon: https://dgsn.io/icon.svg
-keywords:
-  - dgsn
-  - satellite
-  - ground-station
-  - backend
-  - api
-home: https://dgsn.io
-sources:
-  - https://github.com/decentralized-ground-station-network
-maintainers:
-  - name: DGSN Team
-    email: dev@dgsn.io
-    url: https://dgsn.io
-dependencies:
-  - name: dgsn-infra
-    version: 0.1.0
-    repository: file://../dgsn-infra
-    condition: dgsn-infra.enabled
-annotations:
-  artifacthub.io/changes: |
-    - kind: added
-      description: Initial Helm chart for DGSN backend
-  artifacthub.io/category: networking
-  artifacthub.io/license: MIT
+appVersion: "1.0.0"

@@ -5,28 +5,31 @@ metadata:
   labels:
     {{- include "dgsn-crypto.labels" . | nindent 4 }}
 spec:
+  {{- if not .Values.autoscaling.enabled }}
   replicas: {{ .Values.replicaCount }}
-  strategy:
-    type: RollingUpdate
-    rollingUpdate:
-      maxUnavailable: 0
-      maxSurge: 1
+  {{- end }}
   selector:
     matchLabels:
       {{- include "dgsn-crypto.selectorLabels" . | nindent 6 }}
   template:
     metadata:
-      labels:
-        {{- include "dgsn-crypto.labels" . | nindent 8 }}
       annotations:
-        prometheus.io/scrape: "true"
-        prometheus.io/port: "{{ .Values.service.metricsPort }}"
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+        {{- with .Values.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      labels:
+        {{- include "dgsn-crypto.selectorLabels" . | nindent 8 }}
     spec:
-      serviceAccountName: {{ .Values.serviceAccount.name }}
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "dgsn-crypto.serviceAccountName" . }}
       securityContext:
         {{- toYaml .Values.podSecurityContext | nindent 8 }}
       containers:
-        - name: crypto
+        - name: {{ .Chart.Name }}
           securityContext:
             {{- toYaml .Values.securityContext | nindent 12 }}
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
@@ -36,36 +39,69 @@ spec:
               containerPort: {{ .Values.service.port }}
               protocol: TCP
             - name: metrics
-              containerPort: {{ .Values.service.metricsPort }}
+              containerPort: 9090
               protocol: TCP
           env:
-            - name: DGSN_ENVIRONMENT
-              value: {{ .Values.config.environment | quote }}
-            - name: DGSN_LOG_LEVEL
-              value: {{ .Values.config.logLevel | quote }}
-            - name: DGSN_PQC_ENABLED
-              value: {{ .Values.config.pqc.enabled | quote }}
-            - name: DGSN_KEM_ALGORITHM
-              value: {{ .Values.config.pqc.kemAlgorithm | quote }}
-            - name: DGSN_SIG_ALGORITHM
-              value: {{ .Values.config.pqc.signatureAlgorithm | quote }}
-            - name: DGSN_HYBRID_MODE
-              value: {{ .Values.config.pqc.hybridMode | quote }}
-            - name: DGSN_OTLP_ENDPOINT
-              value: {{ .Values.config.telemetry.otlpEndpoint | quote }}
-          resources:
-            {{- toYaml .Values.resources | nindent 12 }}
+            {{- range $key, $value := .Values.env }}
+            - name: {{ $key }}
+              value: {{ $value | quote }}
+            {{- end }}
+            - name: GRPC_PORT
+              value: {{ .Values.service.port | quote }}
+            - name: PQC_ENABLED
+              value: {{ .Values.pqc.enabled | quote }}
+            - name: PQC_DEFAULT_ALGORITHM
+              value: {{ .Values.pqc.defaultAlgorithm | quote }}
+            - name: PQC_SECURITY_LEVEL
+              value: {{ .Values.pqc.securityLevel | quote }}
+            - name: METRICS_ENABLED
+              value: {{ .Values.metrics.enabled | quote }}
+            - name: METRICS_PORT
+              value: {{ .Values.metrics.port | quote }}
+            - name: TLS_ENABLED
+              value: {{ .Values.tls.enabled | quote }}
+            - name: TLS_PQC_ENABLED
+              value: {{ .Values.tls.pqcEnabled | quote }}
           livenessProbe:
             grpc:
               port: {{ .Values.service.port }}
-            initialDelaySeconds: 10
-            periodSeconds: 30
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
           readinessProbe:
             grpc:
               port: {{ .Values.service.port }}
-            initialDelaySeconds: 5
-            periodSeconds: 10
+            initialDelaySeconds: 10
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 3
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          volumeMounts:
+            - name: config
+              mountPath: /app/config
+              readOnly: true
+            - name: certs
+              mountPath: /app/certs
+              readOnly: true
+      volumes:
+        - name: config
+          configMap:
+            name: {{ include "dgsn-crypto.fullname" . }}-config
+        - name: certs
+          secret:
+            secretName: {{ include "dgsn-crypto.fullname" . }}-tls
+            optional: true
       {{- with .Values.nodeSelector }}
       nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
         {{- toYaml . | nindent 8 }}
       {{- end }}

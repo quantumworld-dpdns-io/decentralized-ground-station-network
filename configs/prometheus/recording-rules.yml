@@ -1,7 +1,39 @@
 groups:
-  - name: dgsn_recording_rules
+  - name: dgsn_security_observability_recording
     interval: 60s
     rules:
+
+      # SLA / SLO Recording Rules
+      - record: job:sla:ratio_rate5m
+        expr: |
+          sum(rate(dgsn_api_requests_total{status!~"5.."}[5m]))
+          /
+          sum(rate(dgsn_api_requests_total[5m]))
+        labels:
+          slo: "99.9"
+
+      - record: job:error_budget:remaining
+        expr: |
+          1 - (
+            sum(rate(dgsn_api_requests_total{status=~"5.."}[30d]))
+            /
+            sum(rate(dgsn_api_requests_total[30d]))
+          ) / 0.001
+
+      # Service Request Rates
+      - record: service:requests:rate5m
+        expr: sum by(service) (rate(dgsn_api_requests_total[5m]))
+
+      # Service Latency p99 over 1h
+      - record: service:latency:p99_over_1h
+        expr: |
+          histogram_quantile(0.99,
+            sum by(le) (rate(dgsn_api_request_duration_seconds_bucket[1h]))
+          )
+
+      # Station Uptime Ratio (30d)
+      - record: station:uptime:ratio_30d
+        expr: avg_over_time(up[30d])
 
       # API Performance
       - record: dgsn:api_request_duration_seconds:p50_5m

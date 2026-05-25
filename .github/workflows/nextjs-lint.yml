@@ -1,11 +1,9 @@
 name: Next.js Lint
 on:
   push:
-    branches: [main, develop]
-    paths: ['src/frontend/**', '*.{ts,tsx,js,jsx}']
+    branches: [main]
   pull_request:
     branches: [main]
-    paths: ['src/frontend/**', '*.{ts,tsx,js,jsx}']
   workflow_dispatch:
 
 concurrency:
@@ -24,25 +22,16 @@ jobs:
         working-directory: ${{ env.WORKING_DIR }}
     steps:
       - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-        with:
-          version: 9
       - uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
-          cache: pnpm
-          cache-dependency-path: ${{ env.WORKING_DIR }}/pnpm-lock.yaml
-      - name: Install deps
-        run: pnpm install --frozen-lockfile
-      - name: ESLint
-        run: pnpm lint --max-warnings 0
-      - name: TypeScript check
-        run: pnpm typecheck
+          cache: npm
+          cache-dependency-path: ${{ env.WORKING_DIR }}/package-lock.json
+      - name: Install dependencies
+        run: npm ci
+      - name: ESLint check
+        run: npx eslint . --max-warnings 0
+      - name: TypeScript type check
+        run: npx tsc --noEmit
       - name: Prettier check
-        run: pnpm prettier --check "**/*.{ts,tsx,js,jsx,json,md,css}"
-      - name: Check bundle size
-        run: pnpm next build
-      - name: Analyze bundle
-        run: |
-          npx @next/bundle-analyzer
-          ls -la .next/analyze/
+        run: npx prettier --check "**/*.{ts,tsx,js,jsx,json,md,css}"

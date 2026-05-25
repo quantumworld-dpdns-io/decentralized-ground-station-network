@@ -1,11 +1,9 @@
 name: Julia Build
 on:
   push:
-    branches: [main, develop]
-    paths: ['src/signal-processing/**', '**/Project.toml', '**/Manifest.toml']
+    branches: [main]
   pull_request:
     branches: [main]
-    paths: ['src/signal-processing/**', '**/Project.toml', '**/Manifest.toml']
   workflow_dispatch:
 
 concurrency:
@@ -14,13 +12,13 @@ concurrency:
 
 env:
   WORKING_DIR: src/signal-processing
+  JULIA_VERSION: '1.10'
 
 jobs:
   build:
     strategy:
       matrix:
         os: [ubuntu-latest, macos-latest]
-        julia-version: ['1.10', '1.11']
     runs-on: ${{ matrix.os }}
     defaults:
       run:
@@ -29,23 +27,28 @@ jobs:
       - uses: actions/checkout@v4
       - uses: julia-actions/setup-julia@v2
         with:
-          version: ${{ matrix.julia-version }}
+          version: ${{ env.JULIA_VERSION }}
       - uses: julia-actions/cache@v2
       - name: Instantiate package
         run: julia -e 'using Pkg; Pkg.activate("."); Pkg.instantiate()'
-      - name: Precompile
-        run: julia -e 'using Pkg; Pkg.activate("."); Pkg.precompile()'
-      - name: Build sysimage
+      - name: Build sysimage with PackageCompiler
         run: |
           julia -e '
             using Pkg
             Pkg.activate(".")
+            Pkg.add("PackageCompiler")
             using PackageCompiler
             create_sysimage(:SignalProcessing, sysimage_path="SignalProcessing.so",
               precompile_execution_file="precompile.jl")
           '
+      - name: Cache sysimage
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.WORKING_DIR }}/SignalProcessing.so
+          key: sysimage-${{ matrix.os }}-${{ hashFiles('**/Project.toml', '**/Manifest.toml') }}
       - name: Upload sysimage
         uses: actions/upload-artifact@v4
         with:
-          name: signal-processing-sysimage-${{ matrix.os }}-${{ matrix.julia-version }}
+          name: signal-processing-sysimage-${{ matrix.os }}
           path: ${{ env.WORKING_DIR }}/SignalProcessing.so
+          retention-days: 7
