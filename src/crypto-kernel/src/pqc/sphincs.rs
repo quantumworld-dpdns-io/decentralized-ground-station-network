@@ -141,7 +141,7 @@ fn hash_message(pk_seed: &[u8], pk_root: &[u8], message: &[u8], n: usize) -> Vec
     input.extend_from_slice(pk_seed);
     input.extend_from_slice(pk_root);
     input.extend_from_slice(message);
-    let mut hash = sha3_512_hash(&input);
+    let hash = sha3_512_hash(&input);
     hash[..n * (1 + SPX_FORS_TREES)].to_vec()
 }
 
