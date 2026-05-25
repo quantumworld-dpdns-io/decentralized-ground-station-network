@@ -3,8 +3,10 @@ package middleware
 import (
 	"context"
 	"fmt"
+	"math"
 	"net"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 )
@@ -14,34 +16,34 @@ type RateLimiter interface {
 }
 
 type RateLimitInfo struct {
-	Limit     int
-	Remaining int
-	Reset     time.Time
-	RetryAfter time.Duration
+	Limit       int
+	Remaining   int
+	Reset       time.Time
+	RetryAfter  time.Duration
 }
 
 type tokenBucket struct {
-	capacity   float64
-	rate       float64
-	tokens     float64
-	lastUpdate time.Time
-	mu         sync.Mutex
+	capacity    float64
+	rate        float64
+	tokens      float64
+	lastUpdate  time.Time
+	mu          sync.Mutex
 }
 
 type inMemoryRateLimiter struct {
-	buckets    map[string]*tokenBucket
-	capacity   float64
-	rate       float64
-	mu         sync.RWMutex
-	defaultLimit int
+	buckets       map[string]*tokenBucket
+	capacity      float64
+	rate          float64
+	mu            sync.RWMutex
+	defaultLimit  int
 }
 
 func NewInMemoryRateLimiter(requestsPerSecond float64, burst int) *inMemoryRateLimiter {
 	return &inMemoryRateLimiter{
-		buckets:      make(map[string]*tokenBucket),
-		capacity:     float64(burst),
-		rate:         requestsPerSecond,
-		defaultLimit: burst,
+		buckets:       make(map[string]*tokenBucket),
+		capacity:      float64(burst),
+		rate:          requestsPerSecond,
+		defaultLimit:  burst,
 	}
 }
 
@@ -72,6 +74,13 @@ func (rl *inMemoryRateLimiter) getBucket(key string) *tokenBucket {
 	return bucket
 }
 
+func min(a, b float64) float64 {
+	if a < b {
+		return a
+	}
+	return b
+}
+
 func (rl *inMemoryRateLimiter) Allow(ctx context.Context, key string) (bool, *RateLimitInfo, error) {
 	bucket := rl.getBucket(key)
 	bucket.mu.Lock()
@@ -82,10 +91,13 @@ func (rl *inMemoryRateLimiter) Allow(ctx context.Context, key string) (bool, *Ra
 	bucket.tokens = min(bucket.capacity, bucket.tokens+elapsed*bucket.rate)
 	bucket.lastUpdate = now
 
+	secondsToFull := math.Ceil((bucket.capacity - bucket.tokens) / bucket.rate)
+	resetTime := now.Add(time.Duration(secondsToFull) * time.Second)
+
 	info := &RateLimitInfo{
 		Limit:     int(bucket.capacity),
 		Remaining: int(bucket.tokens),
-		Reset:     now.Add(time.Duration((bucket.capacity-bucket.tokens)/time.Second),
+		Reset:     resetTime,
 	}
 
 	if bucket.tokens >= 1 {
@@ -100,17 +112,15 @@ func (rl *inMemoryRateLimiter) Allow(ctx context.Context, key string) (bool, *Ra
 }
 
 type RateLimitConfig struct {
-	RequestsPerSecond float64
-	Burst           int
-	HeaderLimit      int
-	Whitelist       []string
+	RequestsPerSecond  float64
+	Burst              int
+	Whitelist          []string
 }
 
 func DefaultRateLimitConfig() *RateLimitConfig {
 	return &RateLimitConfig{
 		RequestsPerSecond: 100,
-		Burst:           50,
-		HeaderLimit:        100,
+		Burst:             50,
 	}
 }
 
@@ -151,10 +161,10 @@ func (m *rateLimitMiddleware) RateLimit(next http.Handler) http.Handler {
 		w.Header().Set("X-RateLimit-Reset", fmt.Sprintf("%d", info.Reset.Unix()))
 
 		if !allowed {
-			w.Header().Set("Retry-After", fmt.Sprintf("%d", int(info.RetryAfter.Seconds())))
+			w.Header().Set("Retry-After", fmt.Sprintf("%d", int(math.Ceil(info.RetryAfter.Seconds()))))
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusTooManyRequests)
-			fmt.Fprintf(w, `{"error":"rate limit exceeded","retry_after":%d}`, int(info.RetryAfter.Seconds()))
+			fmt.Fprintf(w, `{"error":"rate limit exceeded","retry_after":%d}`, int(math.Ceil(info.RetryAfter.Seconds())))
 			return
 		}
 
@@ -198,5 +208,3 @@ func splitAndTrim(s, sep string) []string {
 	}
 	return result
 }
-
-import "strings"
