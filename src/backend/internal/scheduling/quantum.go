@@ -92,7 +92,7 @@ func (qs *quantumScheduler) quantumSchedule(ctx context.Context, slots []*Schedu
 	return results, nil
 }
 
-func (qs *quantumScheduler) buildCircuit(variables []variable) (*quantum.Circuit, error {
+func (qs *quantumScheduler) buildCircuit(variables []variable) (*quantum.Circuit, error) {
 	qc := quantum.NewCircuit(len(variables), "qaoa")
 
 	for i, v := range variables {
