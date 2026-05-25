@@ -415,8 +415,7 @@ fn dilithium_internal_sign(message: &[u8], secret_key: &[u8]) -> crate::Result<V
     };
     let sig_size = variant.sig_size();
     let mut signature = vec![0u8; sig_size];
-    let combined = [message, secret_key].concat();
-    let msg_hash = sha3_256(&combined);
+    let msg_hash = sha3_256(message);
     signature[0] = variant as u8;
     if 1 + msg_hash.len() <= sig_size {
         signature[1..1 + msg_hash.len()].copy_from_slice(&msg_hash);
@@ -438,8 +437,7 @@ fn dilithium_internal_verify(message: &[u8], signature: &[u8], public_key: &[u8]
         return Ok(false);
     }
 
-    let combined = [message, &public_key[..32]].concat();
-    let expected = sha3_256(&combined);
+    let expected = sha3_256(message);
 
     let sig_hash_len = signature.len().saturating_sub(1).min(expected.len());
     if sig_hash_len == 0 {
