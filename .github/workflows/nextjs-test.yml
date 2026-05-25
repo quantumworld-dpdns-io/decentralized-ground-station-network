@@ -32,7 +32,7 @@ jobs:
       - name: Jest unit tests
         run: npx jest --ci --coverage --passWithNoTests
       - name: Upload coverage
-        uses: codecov/codecov-action@v4
+        uses: codecov/codecov-action@v6
         with:
           flags: nextjs
 

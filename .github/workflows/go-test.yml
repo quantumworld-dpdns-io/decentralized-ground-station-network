@@ -32,7 +32,7 @@ jobs:
       - name: Unit tests
         run: go test -v -race -count=1 -coverprofile=coverage.out ./...
       - name: Upload coverage
-        uses: codecov/codecov-action@v4
+        uses: codecov/codecov-action@v6
         with:
           file: ${{ env.WORKING_DIR }}/coverage.out
           flags: go
