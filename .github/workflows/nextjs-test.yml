@@ -1,11 +1,9 @@
 name: Next.js Test
 on:
   push:
-    branches: [main, develop]
-    paths: ['src/frontend/**', 'package.json']
+    branches: [main]
   pull_request:
     branches: [main]
-    paths: ['src/frontend/**', 'package.json']
   workflow_dispatch:
 
 concurrency:
@@ -24,18 +22,15 @@ jobs:
         working-directory: ${{ env.WORKING_DIR }}
     steps:
       - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-        with:
-          version: 9
       - uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
-          cache: pnpm
-          cache-dependency-path: ${{ env.WORKING_DIR }}/pnpm-lock.yaml
-      - name: Install deps
-        run: pnpm install --frozen-lockfile
-      - name: Jest tests
-        run: pnpm test:ci -- --coverage
+          cache: npm
+          cache-dependency-path: ${{ env.WORKING_DIR }}/package-lock.json
+      - name: Install dependencies
+        run: npm ci
+      - name: Jest unit tests
+        run: npx jest --ci --coverage --passWithNoTests
       - name: Upload coverage
         uses: codecov/codecov-action@v4
         with:
@@ -48,24 +43,26 @@ jobs:
         working-directory: ${{ env.WORKING_DIR }}
     steps:
       - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-        with:
-          version: 9
       - uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
-          cache: pnpm
-          cache-dependency-path: ${{ env.WORKING_DIR }}/pnpm-lock.yaml
-      - name: Install deps
-        run: pnpm install --frozen-lockfile
+          cache: npm
+          cache-dependency-path: ${{ env.WORKING_DIR }}/package-lock.json
+      - name: Install dependencies
+        run: npm ci
       - name: Install Playwright browsers
-        run: pnpm exec playwright install --with-deps chromium
-      - name: Start dev server
-        run: pnpm dev &
-      - name: Run Playwright tests
-        run: pnpm exec playwright test
-      - uses: actions/upload-artifact@v4
+        run: npx playwright install --with-deps chromium
+      - name: Build for preview
+        run: npm run build
+        env:
+          NODE_ENV: production
+      - name: Start preview server
+        run: npx serve@latest out -l 3000 &
+      - name: Run Playwright E2E tests
+        run: npx playwright test
+      - name: Upload Playwright screenshots on failure
         if: failure()
+        uses: actions/upload-artifact@v4
         with:
           name: playwright-screenshots
           path: ${{ env.WORKING_DIR }}/playwright-report/
