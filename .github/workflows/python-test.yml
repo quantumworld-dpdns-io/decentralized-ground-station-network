@@ -37,7 +37,7 @@ jobs:
       - name: Run quantum-specific tests
         run: python -m pytest tests/ -v -n auto --quantum --benchmark-only --benchmark-json=quantum_bench.json
       - name: Upload coverage
-        uses: codecov/codecov-action@v4
+        uses: codecov/codecov-action@v6
         with:
           file: ${{ env.WORKING_DIR }}/coverage.xml
           flags: python
