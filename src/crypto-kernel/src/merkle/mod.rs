@@ -1,11 +1,12 @@
 use blake3::Hash;
+use serde::{Deserialize, Serialize};
 use std::fmt;
 
 const MAX_HEIGHT: usize = 64;
 const LEAF_HASH_PREFIX: u8 = 0x00;
 const NODE_HASH_PREFIX: u8 = 0x01;
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct MerkleTree {
     nodes: Vec<Vec<u8>>,
     leaf_count: usize,
@@ -13,7 +14,7 @@ pub struct MerkleTree {
     root: Option<Vec<u8>>,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct MerkleProof {
     pub leaf: Vec<u8>,
     pub leaf_index: usize,
@@ -139,8 +140,7 @@ impl MerkleTree {
     }
 
     pub fn verify_proof(proof: &MerkleProof, root: &[u8]) -> bool {
-        let mut current = Self::hash_leaf(&proof.leaf);
-        let mut current_bytes = current.to_vec();
+        let mut current_bytes = Self::hash_leaf(&proof.leaf).to_vec();
 
         for (i, sibling) in proof.siblings.iter().enumerate() {
             let go_right = proof.path[i];
@@ -150,7 +150,6 @@ impl MerkleTree {
                 Self::hash_node(sibling, &current_bytes)
             };
             current_bytes = parent.to_vec();
-            current = parent;
         }
 
         current_bytes.as_slice() == root
@@ -269,5 +268,30 @@ mod tests {
     fn test_empty_leaves_error() {
         let result = MerkleTree::from_leaves(&[]);
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_verify_proof_wrong_root() {
+        let leaves1: Vec<Vec<u8>> = (0..4).map(|i| format!("data_{}", i).into_bytes()).collect();
+        let leaves2: Vec<Vec<u8>> = (0..4).map(|i| format!("other_{}", i).into_bytes()).collect();
+        let tree1 = MerkleTree::from_leaves(&leaves1).unwrap();
+        let tree2 = MerkleTree::from_leaves(&leaves2).unwrap();
+
+        let proof = tree1.generate_proof(0).unwrap();
+        let root2 = tree2.root().unwrap().to_vec();
+        assert!(!MerkleTree::verify_proof(&proof, &root2));
+    }
+
+    #[test]
+    fn test_large_tree() {
+        let leaves: Vec<Vec<u8>> = (0..16).map(|i| format!("data_{}", i).into_bytes()).collect();
+        let tree = MerkleTree::from_leaves(&leaves).unwrap();
+        assert_eq!(tree.leaf_count(), 16);
+
+        let root = tree.root().unwrap().to_vec();
+        for i in 0..16 {
+            let proof = tree.generate_proof(i).unwrap();
+            assert!(MerkleTree::verify_proof(&proof, &root));
+        }
     }
 }
