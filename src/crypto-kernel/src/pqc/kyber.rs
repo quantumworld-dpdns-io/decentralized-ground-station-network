@@ -558,7 +558,7 @@ fn kyber_internal_decapsulate(ciphertext: &[u8], secret_key: &[u8]) -> crate::Re
     let mut w = vec![0i16; 256];
     for i in 0..k {
         let nt_u_i = ntt(&u[i]);
-        let dot = poly_mul(&nt_s[i], &nt_u_i);
+        let dot = ntt_mul(&nt_s[i], &nt_u_i);
         for idx in 0..256 { w[idx] = mod_reduce(w[idx] + dot[idx]); }
     }
     let w_inv = inv_ntt(&w);
