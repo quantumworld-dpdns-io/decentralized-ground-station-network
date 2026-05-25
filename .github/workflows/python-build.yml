@@ -1,0 +1,74 @@
+name: Python Build
+on:
+  push:
+    branches: [main, develop]
+    paths: ['src/quantum-engine/**', 'pyproject.toml', 'setup.py', 'setup.cfg']
+  pull_request:
+    branches: [main]
+    paths: ['src/quantum-engine/**', 'pyproject.toml', 'setup.py', 'setup.cfg']
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  WORKING_DIR: src/quantum-engine
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        python-version: ['3.10', '3.11', '3.12']
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        working-directory: ${{ env.WORKING_DIR }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+          cache-dependency-path: ${{ env.WORKING_DIR }}/pyproject.toml
+      - name: Install build deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install build wheel setuptools-rust cibuildwheel
+      - name: Build wheel
+        run: python -m build --wheel
+      - name: Install wheel
+        run: pip install dist/*.whl
+      - name: Verify import
+        run: python -c "from quantum_engine import QuantumEngine; print('OK:', QuantumEngine.__version__)"
+      - name: Upload wheels
+        uses: actions/upload-artifact@v4
+        with:
+          name: quantum-engine-wheels-${{ matrix.os }}-${{ matrix.python-version }}
+          path: ${{ env.WORKING_DIR }}/dist/*.whl
+
+  cibuildwheel:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    defaults:
+      run:
+        working-directory: ${{ env.WORKING_DIR }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install cibuildwheel
+        run: python -m pip install cibuildwheel
+      - name: Build wheels
+        run: python -m cibuildwheel --output-dir wheelhouse
+        env:
+          CIBW_BUILD: "cp310-* cp311-* cp312-*"
+          CIBW_ARCHS: "auto64"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cibuildwheel-wheels-${{ matrix.os }}
+          path: ${{ env.WORKING_DIR }}/wheelhouse/*.whl
