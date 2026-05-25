@@ -11,7 +11,7 @@ spec:
       targetPort: grpc
       protocol: TCP
       name: grpc
-    - port: {{ .Values.service.metricsPort }}
+    - port: 9090
       targetPort: metrics
       protocol: TCP
       name: metrics
