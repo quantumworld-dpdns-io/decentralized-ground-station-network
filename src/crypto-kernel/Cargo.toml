@@ -1,0 +1,28 @@
+[workspace]
+members = ["."]
+resolver = "2"
+
+[package]
+name = "dgsn-crypto-kernel"
+version = "0.1.0"
+edition = "2021"
+description = "Post-quantum cryptographic kernel for DGSN proof-of-reception"
+rust-version = "1.78"
+
+[dependencies]
+liboqs-sys = { git = "https://github.com/open-quantum-safe/liboqs-rust", optional = true }
+rand = "0.8"
+rand_chacha = "0.3"
+blake3 = "1.5"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+bincode = "1.3"
+zeroize = { version = "1.7", features = ["derive"] }
+sha3 = "0.10"
+aes-gcm = "0.10"
+hkdf = "0.12"
+
+[features]
+default = ["pqc"]
+pqc = ["liboqs-sys"]
+wasm = ["wasm-bindgen"]
