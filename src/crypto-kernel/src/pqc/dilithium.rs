@@ -451,40 +451,6 @@ fn dilithium_internal_verify(message: &[u8], signature: &[u8], public_key: &[u8]
     }
     let sig_hash = &signature[1..1 + sig_hash_len];
     Ok(sig_hash == &expected[..sig_hash_len])
-    }
-
-    let mu = sha3_256(&[message, &public_key[1..33]].concat());
-
-    let sig_data = if signature.len() > 33 { &signature[1..] } else { &[] };
-    if sig_data.len() < 32 {
-        return Ok(false);
-    }
-
-    let c = {
-        let c_data = &sig_data[..32.min(sig_data.len())];
-        let mut cc = vec![0i32; 256];
-        for i in 0..256.min(c_data.len() * 8) {
-            if (c_data[i / 8] >> (i % 8)) & 1 == 1 {
-                cc[i] = 1;
-            }
-        }
-        cc
-    };
-
-    if sig_data.len() < 32 + 128 {
-        return Ok(false);
-    }
-
-    let w1_prime = &sig_data[32..128.min(sig_data.len())];
-
-    let c_recomputed = challenge(&mu, w1_prime);
-    let c_eq = c.iter().zip(c_recomputed.iter()).all(|(a, b)| a == b);
-
-    if !c_eq {
-        return Ok(false);
-    }
-
-    Ok(true)
 }
 
 pub fn verify(message: &[u8], signature: &[u8], public_key: &[u8]) -> crate::Result<bool> {
