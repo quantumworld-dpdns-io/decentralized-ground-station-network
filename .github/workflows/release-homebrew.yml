@@ -1,0 +1,62 @@
+name: Homebrew Formula Update
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Release version'
+        required: true
+
+jobs:
+  homebrew:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Generate SHA256
+        id: hash
+        run: |
+          VERSION="${{ github.event.release.tag_name || inputs.version }}"
+          curl -sL "https://github.com/${{ github.repository }}/archive/refs/tags/${VERSION}.tar.gz" -o release.tar.gz
+          echo "hash=$(shasum -a 256 release.tar.gz | cut -d ' ' -f 1)" >> $GITHUB_OUTPUT
+          echo "version=${VERSION#v}" >> $GITHUB_OUTPUT
+      - name: Update formula
+        run: |
+          VERSION="${{ steps.hash.outputs.version }}"
+          HASH="${{ steps.hash.outputs.hash }}"
+          cat > dgsn.rb <<EOF
+          class Dgsn < Formula
+            desc "Decentralized Ground Station Network"
+            homepage "https://github.com/${{ github.repository }}"
+            url "https://github.com/${{ github.repository }}/archive/refs/tags/v#{version}.tar.gz"
+            sha256 "${HASH}"
+            license "MIT"
+
+            depends_on "go" => :build
+            depends_on "rust" => :build
+            depends_on "python@3.12" => :build
+            depends_on "cmake" => :build
+            depends_on "pkg-config" => :build
+            depends_on "openssl@3"
+
+            def install
+              system "make", "build"
+              bin.install "build/dgsn"
+            end
+
+            test do
+              system "#{bin}/dgsn", "--version"
+            end
+          end
+          EOF
+      - name: Push to Homebrew tap
+        uses: peter-evans/create-pull-request@v6
+        with:
+          token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          repository: ${{ github.repository_owner }}/homebrew-dgsn
+          branch: release-${{ steps.hash.outputs.version }}
+          title: "Update DGSN to v${{ steps.hash.outputs.version }}"
+          commit-message: "Update formula to v${{ steps.hash.outputs.version }}"
+          body: "Automated update by release workflow"
+          path: ./homebrew-tap
+          delete-branch: true
