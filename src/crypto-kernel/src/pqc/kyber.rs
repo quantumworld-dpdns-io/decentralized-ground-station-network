@@ -101,7 +101,7 @@ fn poly_mul(a: &[i16], b: &[i16]) -> Vec<i16> {
     let ntb = ntt(b);
     let mut prod = vec![0i16; nta.len().min(ntb.len())];
     for i in 0..prod.len() {
-        prod[i] = mod_reduce(nta[i] * ntb[i]);
+        prod[i] = mod_reduce(((nta[i] as i32) * (ntb[i] as i32)) as i16);
     }
     inv_ntt(&prod)
 }
