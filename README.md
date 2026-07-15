@@ -32,3 +32,7 @@ Please read [CONTRIBUTING.md](docs/CONTRIBUTING.md) before opening a pull reques
 ## License
 
 [MIT](LICENSE)
+
+
+---
+Julia language: [#JuliaLang](https://julialang.org/) | [JuliaLang GitHub](https://github.com/JuliaLang/julia)
